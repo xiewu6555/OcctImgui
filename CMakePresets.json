@@ -7,29 +7,43 @@
     },
     "configurePresets": [
         {
-            "name": "default",
-            "displayName": "Default Config",
-            "description": "Default build using Ninja",
-            "generator": "Ninja",
-            "architecture": {
-                "value": "x64",
-                "strategy": "external"
-            },
-            "binaryDir": "${sourceDir}/build",
+            "name": "base",
+            "hidden": true,
+            "generator": "Visual Studio 17 2022",
+            "architecture": "x64",
             "cacheVariables": {
-                "CMAKE_TOOLCHAIN_FILE": "D:/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "VCPKG_TARGET_TRIPLET": "x64-windows",
-                "CMAKE_C_COMPILER": "cl.exe",
-                "CMAKE_CXX_COMPILER": "cl.exe"
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": true
+            }
+        },
+        {
+            "name": "debug",
+            "inherits": "base",
+            "displayName": "Debug (OcctImgui)",
+            "description": "使用 Debug 模式构建 OcctImgui 项目（无优化，完整调试信息）",
+            "binaryDir": "${sourceDir}/build/Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "relwithdebinfo",
+            "inherits": "base",
+            "displayName": "RelWithDebInfo (OcctImgui)",
+            "description": "使用 RelWithDebInfo 模式构建 OcctImgui 项目（优化但包含调试信息，用于性能分析）",
+            "binaryDir": "${sourceDir}/build/RelWithDebInfo",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             }
         },
         {
             "name": "release",
-            "displayName": "Release Config",
-            "description": "Release build configuration",
-            "inherits": "default",
+            "inherits": "base",
+            "displayName": "Release (OcctImgui)",
+            "description": "使用 Release 模式构建 OcctImgui 项目（完全优化，用于生产发布）",
+            "binaryDir": "${sourceDir}/build/Release",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
@@ -37,14 +51,24 @@
     ],
     "buildPresets": [
         {
-            "name": "default-build",
-            "configurePreset": "default",
-            "configuration": "RelWithDebInfo"
-
+            "name": "debug",
+            "configurePreset": "debug",
+            "displayName": "Debug 构建 (OcctImgui)",
+            "description": "使用 Debug 配置构建 OcctImgui 项目",
+            "configuration": "Debug"
         },
         {
-            "name": "release-build",
+            "name": "relwithdebinfo",
+            "configurePreset": "relwithdebinfo",
+            "displayName": "RelWithDebInfo 构建 (OcctImgui)",
+            "description": "使用 RelWithDebInfo 配置构建 OcctImgui 项目（优化但包含调试信息）",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "release",
             "configurePreset": "release",
+            "displayName": "Release 构建 (OcctImgui)",
+            "description": "使用 Release 配置构建 OcctImgui 项目（完全优化）",
             "configuration": "Release"
         }
     ]

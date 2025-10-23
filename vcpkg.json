@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "occtimgui",
+  "version": "1.0.0",
+  "builtin-baseline": "8d478ade78ecee40063d89c435e4baf9d0529deb",
+  "dependencies": [
+    "opencascade",
+    {
+      "name": "imgui",
+      "features": ["glfw-binding", "opengl3-binding"]
+    },
+    "glfw3",
+    "netgen",
+    "boost-signals2",
+    "boost-test",
+    "spdlog",
+    {
+      "name": "libigl",
+      "features": ["cgal"]
+    },
+    "eigen3"
+  ]
+}

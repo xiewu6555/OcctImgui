@@ -14,11 +14,13 @@ find_package(imgui REQUIRED)
 find_package(OpenCASCADE REQUIRED)
 find_package(Netgen CONFIG REQUIRED)
 find_package(Boost REQUIRED COMPONENTS signals2 unit_test_framework)
-find_package(nfd REQUIRED)
 find_package(spdlog REQUIRED)
 option(LIBIGL_USE_STATIC_LIBRARY "Use libIGL as static library" ON)
 find_package(libigl REQUIRED)
 find_package(Eigen3 REQUIRED)
+
+# Add nfd (Native File Dialog) library
+add_subdirectory(third_party/nfd EXCLUDE_FROM_ALL)
 
 # Enable testing with CTest
 include(CTest)
