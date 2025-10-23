@@ -1,0 +1,4 @@
+[submodule "IFR"]
+	path = IFR
+	url = https://github.com/xiewu6555/IFR.git
+	branch = imos-dev
