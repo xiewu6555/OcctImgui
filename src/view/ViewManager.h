@@ -203,6 +203,17 @@ public:
     }
 
     /**
+     * @brief Adds an already created view to the manager
+     * @param viewId Unique identifier for the view
+     * @param view Shared pointer to the view to add
+     */
+    void addView(const std::string& viewId, std::shared_ptr<IView> view)
+    {
+        myViews[viewId] = view;
+        getViewManagerLogger()->info("Added view with ID: {}", viewId);
+    }
+
+    /**
      * @brief Retrieves a view by its ID
      * @param viewId The ID of the view to retrieve
      * @return Shared pointer to the view, or nullptr if not found

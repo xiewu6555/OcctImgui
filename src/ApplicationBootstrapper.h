@@ -132,6 +132,9 @@ private:
     /** View manager */
     std::unique_ptr<ViewManager> myViewManager;
 
+    /** Feature recognition viewmodel (stored separately due to different constructor) */
+    std::shared_ptr<class FeatureRecognitionViewModel> myFeatureRecognitionViewModel;
+
     /** Logger */
     std::shared_ptr<Utils::Logger> myLogger;
 
@@ -146,4 +149,13 @@ private:
 
     /** OCCT view ID */
     std::string myOcctViewId;
+
+    /** Feature recognition model ID */
+    std::string myFeatureRecognitionModelId;
+
+    /** Feature recognition viewmodel ID */
+    std::string myFeatureRecognitionViewModelId;
+
+    /** Feature recognition view ID */
+    std::string myFeatureRecognitionViewId;
 };

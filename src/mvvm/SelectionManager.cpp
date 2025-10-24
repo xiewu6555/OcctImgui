@@ -1,7 +1,7 @@
 #include "SelectionManager.h"
 #include "utils/Logger.h"
+#include <AIS_Shape.hxx>
 #include <algorithm>
-
 
 using namespace MVVM;
 
@@ -206,6 +206,26 @@ const SelectionInfo& SelectionManager::getCurrentSelection() const
 bool SelectionManager::hasSelection() const
 {
     return !mySelectionInfo.selectedObjects.empty();
+}
+
+TopoDS_Shape SelectionManager::getSelectedShape() const
+{
+    if (mySelectionInfo.selectedObjects.empty()) {
+        return TopoDS_Shape();
+    }
+
+    Handle(AIS_Shape) aisShape =
+        Handle(AIS_Shape)::DownCast(mySelectionInfo.selectedObjects.front());
+    if (!aisShape.IsNull()) {
+        return aisShape->Shape();
+    }
+
+    return TopoDS_Shape();
+}
+
+int SelectionManager::getSelectionMode() const
+{
+    return mySelectionInfo.selectionMode;
 }
 
 void SelectionManager::notifySelectionChanged()

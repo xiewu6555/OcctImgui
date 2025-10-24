@@ -18,9 +18,24 @@ find_package(spdlog REQUIRED)
 option(LIBIGL_USE_STATIC_LIBRARY "Use libIGL as static library" ON)
 find_package(libigl REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 # Add nfd (Native File Dialog) library
 add_subdirectory(third_party/nfd EXCLUDE_FROM_ALL)
+
+# IFR integration
+set(IFR_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/IFR/installed")
+if(EXISTS "${IFR_INSTALL_DIR}/include" AND EXISTS "${IFR_INSTALL_DIR}/lib/featureRecognizer.lib")
+    message(STATUS "IFR detected at ${IFR_INSTALL_DIR}")
+    set(OCCTIMGUI_ENABLE_IFR ON)
+else()
+    message(WARNING "IFR installed directory not found. Feature recognition will use mock implementation.")
+endif()
+
+# Add IFR (Interactive Feature Recognition) library
+# Temporarily disabled due to compilation issues in submodule
+# TODO: Enable when IFR compilation issues are resolved
+# include(IFR_wrapper.cmake)
 
 # Enable testing with CTest
 include(CTest)
@@ -39,9 +54,13 @@ add_library(OcctImguiLib STATIC
     src/model/ModelFactory.cpp
     src/model/ModelManager.cpp
     src/model/ModelImporter.cpp
+    src/model/FeatureRecognitionModel.cpp
+    src/model/FeatureRecognitionModel_Mock.cpp  # Using mock implementation temporarily
     src/view/ImGuiView.cpp
     src/view/OcctView.cpp
+    src/view/FeatureRecognitionView.cpp
     src/viewmodel/GeometryViewModel.cpp
+    src/viewmodel/FeatureRecognitionViewModel.cpp
     src/viewmodel/ViewModelManager.cpp
     src/window/WindowManager.cpp
     src/input/InputManager.cpp
@@ -63,7 +82,20 @@ endif()
 target_include_directories(OcctImguiLib
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src # Only keep the src directory in the include path
+    ${CMAKE_CURRENT_SOURCE_DIR} # For IFR includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer
 )
+
+if(OCCTIMGUI_ENABLE_IFR)
+    target_include_directories(OcctImguiLib
+        PUBLIC
+        ${IFR_INSTALL_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep
+        ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/auxiliary
+    )
+    target_link_libraries(OcctImguiLib PUBLIC "${IFR_INSTALL_DIR}/lib/featureRecognizer.lib")
+    target_compile_definitions(OcctImguiLib PUBLIC OCCTIMGUI_ENABLE_IFR)
+endif()
 
 target_link_libraries(OcctImguiLib
     PUBLIC
@@ -77,7 +109,9 @@ target_link_libraries(OcctImguiLib
     nfd::nfd
     igl_copyleft::igl_copyleft_cgal
     Boost::signals2
+    nlohmann_json::nlohmann_json
 )
+
 
 # Add executable target
 add_executable(OcctImgui
@@ -96,6 +130,13 @@ target_link_libraries(OcctImgui
     PRIVATE
     OcctImguiLib
 )
+
+if(OCCTIMGUI_ENABLE_IFR AND WIN32)
+    add_custom_command(TARGET OcctImgui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${IFR_INSTALL_DIR}/bin/featureRecognizer.dll"
+            $<TARGET_FILE_DIR:OcctImgui>)
+endif()
 
 target_compile_options(OcctImgui PRIVATE
     $<$<CONFIG:Debug>:-g>

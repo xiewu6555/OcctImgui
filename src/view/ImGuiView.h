@@ -30,8 +30,18 @@ public:
         return myViewModel;
     }
 
+    /**
+     * @brief Sets the feature recognition viewmodel
+     * @param featureViewModel The feature recognition viewmodel
+     */
+    void setFeatureRecognitionViewModel(std::shared_ptr<class FeatureRecognitionViewModel> featureViewModel)
+    {
+        myFeatureRecognitionViewModel = featureViewModel;
+    }
+
 private:
     std::shared_ptr<IViewModel> myViewModel;
+    std::shared_ptr<class FeatureRecognitionViewModel> myFeatureRecognitionViewModel;
     GLFWwindow* myWindow;
 
     /** Connection tracker for signal connections */
@@ -67,6 +77,7 @@ private:
     void executeCreateMesh();
     void executeDeleteSelected();
     void executeImportModel();
+    void executeFeatureRecognition();
 
     // 订阅事件
     void subscribeToEvents();

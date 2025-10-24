@@ -18,6 +18,18 @@
       "name": "libigl",
       "features": ["cgal"]
     },
-    "eigen3"
+    "eigen3",
+    "nlohmann-json",
+    "gtest"
+  ],
+  "overrides": [
+    {
+      "name": "fmt",
+      "version": "11.2.0"
+    },
+    {
+      "name": "spdlog",
+      "version-semver": "1.15.3"
+    }
   ]
 }

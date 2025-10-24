@@ -2,6 +2,7 @@
 
 #include "mvvm/MessageBus.h"
 #include <AIS_InteractiveObject.hxx>
+#include <TopoDS_Shape.hxx>
 #include <map>
 #include <memory>
 #include <string>
@@ -43,6 +44,12 @@ public:
 
     // Check if there is any selection
     bool hasSelection() const;
+
+    // Get the primary selected shape (first AIS_Shape)
+    TopoDS_Shape getSelectedShape() const;
+
+    // Get current selection mode
+    int getSelectionMode() const;
 
 private:
     // 私有构造函数

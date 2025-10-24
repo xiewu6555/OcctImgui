@@ -25,6 +25,11 @@ tags
 
 /docs/
 /vcpkg_installed/
+/data/
+VERIFY_IFR_PATHS.cmake
+IFR_wrapper.cmake
+
+
 
 # CMake
 CMakeUserPresets.json

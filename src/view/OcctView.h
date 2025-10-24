@@ -136,6 +136,24 @@ public:
         return myToWaitEvents;
     }
 
+    /**
+     * @brief Sets the feature recognition viewmodel
+     * @param viewModel The feature recognition viewmodel
+     */
+    void setFeatureRecognitionViewModel(std::shared_ptr<class FeatureRecognitionViewModel> viewModel);
+
+    /**
+     * @brief Highlights faces of a feature
+     * @param faceIDs The face IDs to highlight
+     * @param color The highlight color
+     */
+    void highlightFeatureFaces(const std::vector<std::string>& faceIDs, const Quantity_Color& color);
+
+    /**
+     * @brief Clears all feature highlights
+     */
+    void clearFeatureHighlights();
+
 protected:
     /**
      * @brief Handles view redraw requests
@@ -166,6 +184,15 @@ private:
 
     /** Connection tracker for signal connections */
     MVVM::ConnectionTracker myConnections;
+
+    /** Feature recognition viewmodel for highlighting features */
+    std::shared_ptr<class FeatureRecognitionViewModel> myFeatureRecognitionViewModel;
+
+    /** Colored shape for highlighting features */
+    Handle(class AIS_ColoredShape) myFeatureHighlightShape;
+
+    /** Current highlighted shape */
+    TopoDS_Shape myCurrentHighlightedShape;
 
     /**
      * @brief Sets up the view cube

@@ -3,6 +3,7 @@
 #include "mvvm/MessageBus.h"
 #include "utils/Logger.h"
 #include "viewmodel/Commands.h"
+#include "viewmodel/FeatureRecognitionViewModel.h"
 
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -229,6 +230,14 @@ void ImGuiView::renderToolbar()
     ImGui::SameLine();
     if (ImGui::Button("Delete", ImVec2(0, 0))) {
         executeDeleteSelected();
+    }
+
+    // Feature Recognition button
+    ImGui::SameLine();
+    ImGui::Separator();
+    ImGui::SameLine();
+    if (ImGui::Button("Recognize Features")) {
+        executeFeatureRecognition();
     }
 
     ImGui::End();
@@ -511,6 +520,49 @@ void ImGuiView::executeImportModel()
 
     // 清理NFD
     NFD_Quit();
+}
+
+void ImGuiView::executeFeatureRecognition()
+{
+    getImGuiViewLogger()->info("Executing feature recognition");
+
+    if (!myFeatureRecognitionViewModel) {
+        getImGuiViewLogger()->warn("Feature recognition viewmodel not set");
+        return;
+    }
+
+    auto geometryVM = getGeometryViewModel();
+    if (!geometryVM) {
+        getImGuiViewLogger()->error("No geometry viewmodel available");
+        return;
+    }
+
+    // Get selected shapes from SelectionManager
+    const auto& selectionManager = MVVM::SelectionManager::getInstance();
+    if (!selectionManager.hasSelection()) {
+        getImGuiViewLogger()->info("No shape selected for feature recognition");
+        return;
+    }
+
+    // Get the first selected shape
+    TopoDS_Shape selectedShape = selectionManager.getSelectedShape();
+    if (selectedShape.IsNull()) {
+        getImGuiViewLogger()->error("Selected shape is null");
+        return;
+    }
+
+    // Execute feature recognition
+    // Use default parameters for now (can be configured later)
+    std::string jsonParams = R"({
+        "recognitionStrategy": "RuleBasedOnly",
+        "operationType": "Milling",
+        "linearTolerance": 0.01,
+        "recognizeHoles": true,
+        "recognizePockets": true,
+        "recognizeSlots": true
+    })";
+
+    myFeatureRecognitionViewModel->executeRecognition(selectedShape, jsonParams);
 }
 
 void ImGuiView::subscribeToEvents()

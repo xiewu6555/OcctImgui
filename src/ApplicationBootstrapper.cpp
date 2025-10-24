@@ -1,6 +1,9 @@
 #include "ApplicationBootstrapper.h"
+#include "model/FeatureRecognitionModel.h"
 #include "model/GeometryModel.h"
 #include "utils/Logger.h"
+#include "view/FeatureRecognitionView.h"
+#include "viewmodel/FeatureRecognitionViewModel.h"
 #include "viewmodel/GeometryViewModel.h"
 
 
@@ -20,6 +23,9 @@ ApplicationBootstrapper::ApplicationBootstrapper()
     , myViewModelId("MainViewModel")
     , myImGuiViewId("ImGuiView")
     , myOcctViewId("OcctView")
+    , myFeatureRecognitionModelId("FeatureRecognitionModel")
+    , myFeatureRecognitionViewModelId("FeatureRecognitionViewModel")
+    , myFeatureRecognitionViewId("FeatureRecognitionView")
 {
     myLogger->info("ApplicationBootstrapper created");
 
@@ -132,14 +138,24 @@ bool ApplicationBootstrapper::initializeModel()
     myLogger->info("Initializing model");
 
     try {
-        // Create the main model
+        // Create the main geometry model
         auto model = myModelManager->createModel<GeometryModel>(myModelId);
         if (!model) {
-            myLogger->error("Failed to create model");
+            myLogger->error("Failed to create geometry model");
             return false;
         }
+        myLogger->info("Geometry model initialized with ID: {}", myModelId);
 
-        myLogger->info("Model initialized with ID: {}", myModelId);
+        // Create the feature recognition model
+        auto featureModel =
+            myModelManager->createModel<FeatureRecognitionModel>(myFeatureRecognitionModelId);
+        if (!featureModel) {
+            myLogger->error("Failed to create feature recognition model");
+            return false;
+        }
+        myLogger->info("Feature recognition model initialized with ID: {}",
+                       myFeatureRecognitionModelId);
+
         return true;
     }
     catch (const std::exception& e) {
@@ -181,11 +197,24 @@ bool ApplicationBootstrapper::initializeViewModel()
                                                                                   aContext);
 
         if (!viewModel) {
-            myLogger->error("Failed to create viewmodel");
+            myLogger->error("Failed to create geometry viewmodel");
+            return false;
+        }
+        myLogger->info("Geometry viewmodel initialized with ID: {}", myViewModelId);
+
+        // Create the feature recognition viewmodel
+        auto featureModel = std::dynamic_pointer_cast<FeatureRecognitionModel>(
+            myModelManager->getModel(myFeatureRecognitionModelId));
+
+        if (!featureModel) {
+            myLogger->error("Failed to get feature recognition model for viewmodel creation");
             return false;
         }
 
-        myLogger->info("Viewmodel initialized with ID: {}", myViewModelId);
+        myFeatureRecognitionViewModel = std::make_shared<FeatureRecognitionViewModel>(featureModel);
+        myLogger->info("Feature recognition viewmodel created with ID: {}",
+                       myFeatureRecognitionViewModelId);
+
         return true;
     }
     catch (const std::exception& e) {
@@ -216,6 +245,9 @@ bool ApplicationBootstrapper::initializeViews()
         myViewManager->initializeView(myImGuiViewId,
                                       myWindowManager->getOcctWindow()->getGlfwWindow());
 
+        // Set feature recognition viewmodel to ImGuiView
+        imguiView->setFeatureRecognitionViewModel(myFeatureRecognitionViewModel);
+
         // Create OCCT view
         myLogger->info("Creating OcctView");
         auto occtView = myViewManager->createOcctView(myOcctViewId,
@@ -234,6 +266,25 @@ bool ApplicationBootstrapper::initializeViews()
         // Initialize OCCT view
         occtView->initialize();
 
+        // Set feature recognition viewmodel to OcctView
+        occtView->setFeatureRecognitionViewModel(myFeatureRecognitionViewModel);
+
+        // Create Feature Recognition view
+        myLogger->info("Creating FeatureRecognitionView");
+        auto featureView = std::make_shared<FeatureRecognitionView>(myFeatureRecognitionViewModel);
+
+        if (!featureView) {
+            myLogger->error("Failed to create FeatureRecognitionView");
+            return false;
+        }
+
+        // Initialize Feature Recognition view
+        featureView->initialize(myWindowManager->getOcctWindow()->getGlfwWindow());
+
+        // Add the view to ViewManager
+        myViewManager->addView(myFeatureRecognitionViewId, featureView);
+
+        myLogger->info("Feature Recognition view initialized");
         myLogger->info("Views initialized successfully");
         return true;
     }
