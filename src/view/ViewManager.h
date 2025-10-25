@@ -176,16 +176,24 @@ public:
      */
     void renderInOrder(const std::vector<std::string>& viewIds)
     {
+        // First pass: call newFrame for all views to set up rendering state
         for (const auto& viewId : viewIds) {
             auto view = getView(viewId);
             if (view) {
                 view->newFrame();
-                view->render();
-                // getViewManagerLogger()->debug("Rendered view with ID: {}", viewId);
             }
             else {
                 getViewManagerLogger()->warn("Cannot render view with ID: {}, view not found",
                                              viewId);
+            }
+        }
+
+        // Second pass: render views in the same order
+        for (const auto& viewId : viewIds) {
+            auto view = getView(viewId);
+            if (view) {
+                view->render();
+                // getViewManagerLogger()->debug("Rendered view with ID: {}", viewId);
             }
         }
     }

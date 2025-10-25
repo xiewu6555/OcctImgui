@@ -62,7 +62,7 @@ void Application::mainloop()
     auto& viewManager = myBootstrapper->getViewManager();
 
     // Define view render order
-    std::vector<std::string> renderOrder = {"OcctView", "ImGuiView", "FeatureRecognitionView"};
+    std::vector<std::string> renderOrder = {"OcctView", "FeatureRecognitionView", "ImGuiView"};
 
     // Main loop
     while (myIsRunning && !windowManager.shouldClose()) {
