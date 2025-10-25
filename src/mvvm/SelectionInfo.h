@@ -1,9 +1,12 @@
 ﻿#pragma once
 
 #include <AIS_InteractiveObject.hxx>
+#include <TopoDS_Face.hxx>
 #include <any>
 #include <map>
 #include <ostream>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace MVVM
@@ -44,8 +47,26 @@ struct SelectionInfo
         {}
     };
 
-    // 主要选中的交互对象
-    std::vector<Handle(AIS_InteractiveObject)> selectedObjects;
+    // 选中的交互对象（带唯一 ID）
+    struct SelectedObject
+    {
+        std::string id;
+        Handle(AIS_InteractiveObject) object;
+
+        SelectedObject() = default;
+        SelectedObject(std::string objectId, Handle(AIS_InteractiveObject) interactive)
+            : id(std::move(objectId))
+            , object(std::move(interactive))
+        {}
+    };
+
+    std::vector<SelectedObject> selectedObjects;
+
+    struct FaceSelectionData
+    {
+        TopoDS_Face face;
+        std::string id;
+    };
 
     // 对象ID到选中子特征的映射
     std::map<std::string, std::vector<SubFeatureIdentifier>> subFeatures;

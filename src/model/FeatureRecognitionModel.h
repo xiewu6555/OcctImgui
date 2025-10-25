@@ -12,11 +12,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <Quantity_Color.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
+#include <TopTools_DataMapOfShapeInteger.hxx>
 
 /**
  * @class FeatureRecognitionModel
@@ -56,6 +58,13 @@ public:
     {
         int shapeIDCount;
         std::vector<ShapeID> shapeIDs;
+    };
+
+    struct FeatureLocation
+    {
+        int groupIndex = -1;
+        int subGroupIndex = -1; // -1 when group has direct features
+        int featureIndex = -1;
     };
 
     /**
@@ -154,6 +163,17 @@ public:
     TopoDS_Face getFaceByID(const std::string& faceID) const;
 
     /**
+     * @brief 根据面实体查找对应的面 ID
+     * @param face 目标面
+     * @return 面 ID 字符串，若未找到返回空字符串
+     */
+    std::string getFaceId(const TopoDS_Face& face) const;
+
+    std::vector<FeatureLocation> findFeatureLocationsForFace(const std::string& faceId) const;
+
+    std::vector<FeatureLocation> findFeatureLocationsForFace(const TopoDS_Face& face) const;
+
+    /**
      * @brief Builds the face ID map from the original shape
      */
     void buildFaceMap();
@@ -186,6 +206,8 @@ private:
     std::string myJsonResult;                      // Raw JSON result
     std::vector<FeatureGroup> myFeatureGroups;     // Parsed feature groups
     std::map<std::string, TopoDS_Face> myFaceMap;  // Map from face ID to TopoDS_Face
+    TopTools_DataMapOfShapeInteger myFaceReverseMap; // Map from TopoDS_Face to face index
+    std::unordered_map<std::string, std::vector<FeatureLocation>> myFaceToFeatureMap;
     std::string myLastError;                       // Last error message
 
     /**

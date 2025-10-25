@@ -2,6 +2,7 @@
 
 #include "mvvm/MessageBus.h"
 #include <AIS_InteractiveObject.hxx>
+#include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <map>
 #include <memory>
@@ -48,8 +49,19 @@ public:
     // Get the primary selected shape (first AIS_Shape)
     TopoDS_Shape getSelectedShape() const;
 
+    // 获取当前所有选中的面（仅当 selectionMode 支持时）
+    std::vector<TopoDS_Face> getSelectedFaces() const;
+
+    // 获取当前所有选中面的 ID（若有）
+    std::vector<std::string> getSelectedFaceIds() const;
+
     // Get current selection mode
     int getSelectionMode() const;
+
+    // Replace entire selection
+    void setSelection(const std::vector<SelectionInfo::SelectedObject>& objects,
+                      const std::map<std::string, std::vector<SelectionInfo::SubFeatureIdentifier>>& subFeatures,
+                      SelectionInfo::SelectionType type = SelectionInfo::SelectionType::New);
 
 private:
     // 私有构造函数

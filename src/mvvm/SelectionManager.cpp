@@ -1,7 +1,15 @@
 #include "SelectionManager.h"
 #include "utils/Logger.h"
+
 #include <AIS_Shape.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS.hxx>
+
 #include <algorithm>
+#include <set>
+#include <string>
+#include <unordered_set>
 
 using namespace MVVM;
 
@@ -34,39 +42,38 @@ void SelectionManager::addToSelection(const Handle(AIS_InteractiveObject) & obje
                      ? "Add"
                      : "Remove");
 
-    // Clear previous selection if type is New
+    auto findByObject = [&](const Handle(AIS_InteractiveObject) & candidate) {
+        return std::find_if(mySelectionInfo.selectedObjects.begin(),
+                            mySelectionInfo.selectedObjects.end(),
+                            [&](const SelectionInfo::SelectedObject& entry) {
+                                return entry.object == candidate;
+                            });
+    };
+
     if (mySelectionInfo.selectionType == SelectionInfo::SelectionType::New) {
         mySelectionInfo.selectedObjects.clear();
         mySelectionInfo.subFeatures.clear();
         logger->debug("Cleared previous selection (New type)");
     }
 
-    // Add to selection if not removing
     if (mySelectionInfo.selectionType != SelectionInfo::SelectionType::Remove) {
-        // Check if object is already in selection
-        auto it = std::find(mySelectionInfo.selectedObjects.begin(),
-                            mySelectionInfo.selectedObjects.end(),
-                            object);
-
+        auto it = findByObject(object);
         if (it == mySelectionInfo.selectedObjects.end()) {
-            mySelectionInfo.selectedObjects.push_back(object);
+            mySelectionInfo.selectedObjects.emplace_back(objectId, object);
             logger->debug("Added object {} to selection. Current selection size: {}",
                           objectId,
                           mySelectionInfo.selectedObjects.size());
         }
         else {
-            logger->debug("Object {} already in selection", objectId);
+            it->id = objectId;
+            logger->debug("Object {} already in selection, updated identifier", objectId);
         }
     }
-    // Remove from selection if type is Remove
     else {
-        auto it = std::find(mySelectionInfo.selectedObjects.begin(),
-                            mySelectionInfo.selectedObjects.end(),
-                            object);
-
+        auto it = findByObject(object);
         if (it != mySelectionInfo.selectedObjects.end()) {
+            mySelectionInfo.subFeatures.erase(it->id);
             mySelectionInfo.selectedObjects.erase(it);
-            mySelectionInfo.subFeatures.erase(objectId);
             logger->debug("Removed object {} from selection. Current selection size: {}",
                           objectId,
                           mySelectionInfo.selectedObjects.size());
@@ -76,7 +83,6 @@ void SelectionManager::addToSelection(const Handle(AIS_InteractiveObject) & obje
         }
     }
 
-    // Notify selection changed
     notifySelectionChanged();
 }
 
@@ -116,23 +122,24 @@ void SelectionManager::removeFromSelection(const Handle(AIS_InteractiveObject) &
     auto logger = getSelectionManagerLogger();
     logger->info("Removing object {} from selection", objectId);
 
-    auto it = std::find(mySelectionInfo.selectedObjects.begin(),
-                        mySelectionInfo.selectedObjects.end(),
-                        object);
+    auto it = std::find_if(mySelectionInfo.selectedObjects.begin(),
+                           mySelectionInfo.selectedObjects.end(),
+                           [&](const SelectionInfo::SelectedObject& entry) {
+                               return entry.object == object;
+                           });
 
-    if (it != mySelectionInfo.selectedObjects.end()) {
-        mySelectionInfo.selectedObjects.erase(it);
-        mySelectionInfo.subFeatures.erase(objectId);
-        logger->debug("Removed object {} and its subfeatures. Current selection size: {}",
-                      objectId,
-                      mySelectionInfo.selectedObjects.size());
-
-        // Notify selection changed
-        notifySelectionChanged();
-    }
-    else {
+    if (it == mySelectionInfo.selectedObjects.end()) {
         logger->debug("Object {} not found in selection for removal", objectId);
+        return;
     }
+
+    mySelectionInfo.subFeatures.erase(it->id);
+    mySelectionInfo.selectedObjects.erase(it);
+    logger->debug("Removed object {} and its subfeatures. Current selection size: {}",
+                  objectId,
+                  mySelectionInfo.selectedObjects.size());
+
+    notifySelectionChanged();
 }
 
 void SelectionManager::removeFromSelection(const std::string& objectId)
@@ -140,30 +147,24 @@ void SelectionManager::removeFromSelection(const std::string& objectId)
     auto logger = getSelectionManagerLogger();
     logger->info("Removing object {} from selection by ID", objectId);
 
-    // Find and remove the object with the given ID
-    auto subFeaturesIt = mySelectionInfo.subFeatures.find(objectId);
-    if (subFeaturesIt != mySelectionInfo.subFeatures.end()) {
-        // Remove from subFeatures
-        mySelectionInfo.subFeatures.erase(subFeaturesIt);
-        logger->debug("Removed subfeatures for object {}", objectId);
+    auto it = std::find_if(mySelectionInfo.selectedObjects.begin(),
+                           mySelectionInfo.selectedObjects.end(),
+                           [&](const SelectionInfo::SelectedObject& entry) {
+                               return entry.id == objectId;
+                           });
 
-        // Remove from selectedObjects
-        auto it = mySelectionInfo.selectedObjects.begin();
-        while (it != mySelectionInfo.selectedObjects.end()) {
-            // Here we would need to match the object to its ID
-            // For simplicity, we'll remove first occurrence
-            it = mySelectionInfo.selectedObjects.erase(it);
-            logger->debug("Removed object from selection. Current selection size: {}",
-                          mySelectionInfo.selectedObjects.size());
-
-            // Notify selection changed
-            notifySelectionChanged();
-            break;
-        }
-    }
-    else {
+    if (it == mySelectionInfo.selectedObjects.end()) {
         logger->debug("Object {} not found in selection for removal", objectId);
+        return;
     }
+
+    mySelectionInfo.subFeatures.erase(objectId);
+    mySelectionInfo.selectedObjects.erase(it);
+    logger->debug("Removed object {} from selection. Current selection size: {}",
+                  objectId,
+                  mySelectionInfo.selectedObjects.size());
+
+    notifySelectionChanged();
 }
 
 void SelectionManager::clearSelection()
@@ -215,7 +216,7 @@ TopoDS_Shape SelectionManager::getSelectedShape() const
     }
 
     Handle(AIS_Shape) aisShape =
-        Handle(AIS_Shape)::DownCast(mySelectionInfo.selectedObjects.front());
+        Handle(AIS_Shape)::DownCast(mySelectionInfo.selectedObjects.front().object);
     if (!aisShape.IsNull()) {
         return aisShape->Shape();
     }
@@ -223,9 +224,128 @@ TopoDS_Shape SelectionManager::getSelectedShape() const
     return TopoDS_Shape();
 }
 
+std::vector<TopoDS_Face> SelectionManager::getSelectedFaces() const
+{
+    std::vector<TopoDS_Face> faces;
+    for (const auto& entry : mySelectionInfo.selectedObjects) {
+        Handle(AIS_Shape) aisShape = Handle(AIS_Shape)::DownCast(entry.object);
+        if (aisShape.IsNull()) {
+            continue;
+        }
+
+        const TopoDS_Shape& parentShape = aisShape->Shape();
+        if (parentShape.IsNull()) {
+            continue;
+        }
+
+        TopTools_IndexedMapOfShape faceMap;
+        TopExp::MapShapes(parentShape, TopAbs_FACE, faceMap);
+
+        std::set<int> visitedIndices;
+        auto subFeatureIt = mySelectionInfo.subFeatures.find(entry.id);
+        if (subFeatureIt == mySelectionInfo.subFeatures.end()) {
+            continue;
+        }
+
+        for (const auto& subFeature : subFeatureIt->second) {
+            if (subFeature.type != SelectionInfo::SubFeatureType::Face) {
+                continue;
+            }
+
+            if (subFeature.additionalData.has_value()) {
+                try {
+                    const auto& data =
+                        std::any_cast<const SelectionInfo::FaceSelectionData&>(subFeature.additionalData);
+                    if (!data.face.IsNull()) {
+                        faces.push_back(data.face);
+                        continue;
+                    }
+                }
+                catch (const std::bad_any_cast&) {
+                    try {
+                        faces.push_back(std::any_cast<TopoDS_Face>(subFeature.additionalData));
+                        continue;
+                    }
+                    catch (const std::bad_any_cast&) {
+                        // Fall through to index-based lookup
+                    }
+                }
+            }
+
+            if (subFeature.index <= 0 || subFeature.index > faceMap.Extent()) {
+                continue;
+            }
+
+            if (visitedIndices.insert(subFeature.index).second) {
+                faces.push_back(TopoDS::Face(faceMap(subFeature.index)));
+            }
+        }
+    }
+
+    return faces;
+}
+
+std::vector<std::string> SelectionManager::getSelectedFaceIds() const
+{
+    std::vector<std::string> ids;
+    std::unordered_set<std::string> seen;
+
+    for (const auto& entry : mySelectionInfo.selectedObjects) {
+        auto subFeatureIt = mySelectionInfo.subFeatures.find(entry.id);
+        if (subFeatureIt == mySelectionInfo.subFeatures.end()) {
+            continue;
+        }
+
+        for (const auto& subFeature : subFeatureIt->second) {
+            if (subFeature.type != SelectionInfo::SubFeatureType::Face) {
+                continue;
+            }
+
+            std::string faceId;
+
+            if (subFeature.additionalData.has_value()) {
+                try {
+                    const auto& data =
+                        std::any_cast<const SelectionInfo::FaceSelectionData&>(subFeature.additionalData);
+                    faceId = data.id;
+                }
+                catch (const std::bad_any_cast&) {
+                    try {
+                        faceId = std::any_cast<std::string>(subFeature.additionalData);
+                    }
+                    catch (const std::bad_any_cast&) {
+                        // ignore
+                    }
+                }
+            }
+
+            if (faceId.empty() && subFeature.index > 0) {
+                faceId = std::to_string(subFeature.index);
+            }
+
+            if (!faceId.empty() && seen.insert(faceId).second) {
+                ids.push_back(std::move(faceId));
+            }
+        }
+    }
+
+    return ids;
+}
+
 int SelectionManager::getSelectionMode() const
 {
     return mySelectionInfo.selectionMode;
+}
+
+void SelectionManager::setSelection(
+    const std::vector<SelectionInfo::SelectedObject>& objects,
+    const std::map<std::string, std::vector<SelectionInfo::SubFeatureIdentifier>>& subFeatures,
+    SelectionInfo::SelectionType type)
+{
+    mySelectionInfo.selectedObjects = objects;
+    mySelectionInfo.subFeatures     = subFeatures;
+    mySelectionInfo.selectionType   = type;
+    notifySelectionChanged();
 }
 
 void SelectionManager::notifySelectionChanged()

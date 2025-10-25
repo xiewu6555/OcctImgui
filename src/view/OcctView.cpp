@@ -1,6 +1,7 @@
 #include "OcctView.h"
 #include "mvvm/GlobalSettings.h"
 #include "mvvm/MessageBus.h"
+#include "mvvm/SelectionManager.h"
 #include "utils/Logger.h"
 #include "viewmodel/FeatureRecognitionViewModel.h"
 #include "model/FeatureRecognitionModel.h"
@@ -10,6 +11,8 @@
 #include <AIS_ViewCube.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
+#include <BRep_Builder.hxx>
 #include <Aspect_DisplayConnection.hxx>
 #include <Aspect_Handle.hxx>
 #include <GLFW/glfw3.h>
@@ -18,8 +21,14 @@
 #include <OpenGl_GraphicDriver.hxx>
 #include <V3d_View.hxx>
 #include <V3d_Viewer.hxx>
+#include <Prs3d_LineAspect.hxx>
+#include <Graphic3d_NameOfMaterial.hxx>
 
 #include <imgui.h>
+#include <algorithm>
+#include <map>
+#include <sstream>
+#include <vector>
 
 // 使用宏声明 OcctView 类的 logger
 DECLARE_LOGGER(OcctView)
@@ -83,6 +92,8 @@ OcctView::~OcctView()
 void OcctView::cleanup()
 {
     getOcctViewLogger()->info("Cleaning up view");
+    clearFeatureHighlights();
+    clearFeatureOverview();
     if (!myView.IsNull()) {
         myView->Remove();
     }
@@ -361,79 +372,20 @@ void OcctView::handleSelection(int x, int y)
                         }
 
                         if (!mainShape.IsNull()) {
-                            TopoDS_Shape originalShape = mainShape->Shape();
+                            TopoDS_Face detectedFace = TopoDS::Face(detectedShape);
+                            std::string faceIdStr    = model->getFaceId(detectedFace);
 
-                            // Find face ID by comparing with all faces
-                            int faceId = 0;
-                            int currentId = 1;
-                            for (TopExp_Explorer exp(originalShape, TopAbs_FACE); exp.More();
-                                 exp.Next()) {
-                                if (detectedShape.IsSame(exp.Current())) {
-                                    faceId = currentId;
-                                    break;
+                            if (!faceIdStr.empty()) {
+                                logger->info("Found face ID: {}", faceIdStr);
+                                auto locations =
+                                    myFeatureRecognitionViewModel->findFeatureLocationsForFace(faceIdStr);
+                                if (!locations.empty()) {
+                                    const auto& loc = locations.front();
+                                    myFeatureRecognitionViewModel->selectFeature(
+                                        loc.groupIndex,
+                                        loc.subGroupIndex,
+                                        loc.featureIndex);
                                 }
-                                currentId++;
-                            }
-
-                            if (faceId > 0) {
-                                logger->info("Found face ID: {}", faceId);
-
-                                // Find which feature contains this face
-                                const auto& groups = model->getFeatureGroups();
-                                for (size_t groupIdx = 0; groupIdx < groups.size(); ++groupIdx) {
-                                    const auto& group = groups[groupIdx];
-
-                                    if (group.subGroups.has_value()) {
-                                        const auto& subGroups = group.subGroups.value();
-                                        for (size_t subGroupIdx = 0; subGroupIdx < subGroups.size();
-                                             ++subGroupIdx) {
-                                            const auto& subGroup = subGroups[subGroupIdx];
-                                            const auto& features = subGroup.features;
-
-                                            for (size_t featureIdx = 0;
-                                                 featureIdx < features.size();
-                                                 ++featureIdx) {
-                                                const auto& feature = features[featureIdx];
-
-                                                for (const auto& shapeId : feature.shapeIDs) {
-                                                    if (std::to_string(faceId) == shapeId.id) {
-                                                        logger->info(
-                                                            "Face belongs to feature in group {}",
-                                                            group.name);
-
-                                                        myFeatureRecognitionViewModel->selectFeature(
-                                                            static_cast<int>(groupIdx),
-                                                            static_cast<int>(subGroupIdx),
-                                                            static_cast<int>(featureIdx));
-
-                                                        goto feature_found;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    else if (group.features.has_value()) {
-                                        const auto& features = group.features.value();
-                                        for (size_t featureIdx = 0; featureIdx < features.size();
-                                             ++featureIdx) {
-                                            const auto& feature = features[featureIdx];
-                                            for (const auto& shapeId : feature.shapeIDs) {
-                                                if (std::to_string(faceId) == shapeId.id) {
-                                                    logger->info(
-                                                        "Face belongs to feature in group {}",
-                                                        group.name);
-
-                                                    myFeatureRecognitionViewModel->selectFeature(
-                                                        static_cast<int>(groupIdx),
-                                                        -1,
-                                                        static_cast<int>(featureIdx));
-                                                    goto feature_found;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                feature_found:;
                             }
                         }
                     }
@@ -442,36 +394,102 @@ void OcctView::handleSelection(int x, int y)
         }
     }
 
-    // Perform regular selection (for object selection mode)
+    // Perform selection and gather results
     myViewModel->getContext()->Select(Standard_True);
 
-    // Get selected objects
-    AIS_ListOfInteractive selected;
-    myViewModel->getContext()->DisplayedObjects(selected);
+    auto buildObjectId = [&](const Handle(AIS_InteractiveObject)& obj) -> std::string {
+        std::string id = myViewModel->getObjectId(obj);
+        if (!id.empty()) {
+            return id;
+        }
+        std::ostringstream oss;
+        oss << "object_" << reinterpret_cast<std::uintptr_t>(obj.get());
+        return oss.str();
+    };
 
-    // Filter to only get selected objects
-    AIS_ListOfInteractive selectedObjects;
-    for (AIS_ListOfInteractive::Iterator it(selected); it.More(); it.Next()) {
-        Handle(AIS_InteractiveObject) obj = it.Value();
-        if (myViewModel->getContext()->IsSelected(obj)) {
-            selectedObjects.Append(obj);
+    auto computeFaceIndex = [](const Handle(AIS_InteractiveObject)& obj,
+                               const TopoDS_Shape& selectedShape) -> int {
+        Handle(AIS_Shape) aisShape = Handle(AIS_Shape)::DownCast(obj);
+        if (aisShape.IsNull()) {
+            return -1;
+        }
+
+        const TopoDS_Shape& parent = aisShape->Shape();
+        if (parent.IsNull()) {
+            return -1;
+        }
+
+        int index = 1;
+        for (TopExp_Explorer exp(parent, TopAbs_FACE); exp.More(); exp.Next(), ++index) {
+            if (selectedShape.IsSame(exp.Current())) {
+                return index;
+            }
+        }
+        return -1;
+    };
+
+    std::vector<MVVM::SelectionInfo::SelectedObject> selectedEntries;
+    std::map<std::string, std::vector<MVVM::SelectionInfo::SubFeatureIdentifier>> subFeatureMap;
+
+    auto appendSelectedObject = [&](const std::string& objectId,
+                                    const Handle(AIS_InteractiveObject)& obj) {
+        auto exists = std::find_if(selectedEntries.begin(),
+                                   selectedEntries.end(),
+                                   [&](const MVVM::SelectionInfo::SelectedObject& entry) {
+                                       return entry.object == obj;
+                                   });
+        if (exists == selectedEntries.end()) {
+            selectedEntries.emplace_back(objectId, obj);
+        }
+    };
+
+    for (myViewModel->getContext()->InitSelected(); myViewModel->getContext()->MoreSelected();
+         myViewModel->getContext()->NextSelected()) {
+        Handle(AIS_InteractiveObject) interactive =
+            myViewModel->getContext()->SelectedInteractive();
+        if (interactive.IsNull()) {
+            continue;
+        }
+
+        std::string objectId = buildObjectId(interactive);
+        appendSelectedObject(objectId, interactive);
+
+        TopoDS_Shape selectedShape = myViewModel->getContext()->SelectedShape();
+        if (selectedShape.IsNull()) {
+            continue;
+        }
+
+        if (selectedShape.ShapeType() == TopAbs_FACE) {
+            int faceIndex = computeFaceIndex(interactive, selectedShape);
+            MVVM::SelectionInfo::SubFeatureIdentifier identifier(
+                MVVM::SelectionInfo::SubFeatureType::Face,
+                faceIndex);
+
+            MVVM::SelectionInfo::FaceSelectionData faceData;
+            faceData.face = TopoDS::Face(selectedShape);
+            if (myFeatureRecognitionViewModel && myFeatureRecognitionViewModel->getFeatureModel()) {
+                faceData.id =
+                    myFeatureRecognitionViewModel->getFeatureModel()->getFaceId(faceData.face);
+            }
+            if (faceData.id.empty() && faceIndex > 0) {
+                faceData.id = std::to_string(faceIndex);
+            }
+
+            identifier.additionalData = faceData;
+            subFeatureMap[objectId].push_back(std::move(identifier));
         }
     }
 
-    logger->info("Selected {} objects", selectedObjects.Extent());
-
-    // Process each selected object
-    for (AIS_ListOfInteractive::Iterator it(selectedObjects); it.More(); it.Next()) {
-        Handle(AIS_InteractiveObject) obj = it.Value();
-
-        // Generate a unique ID for the object
-        std::string objectId =
-            "object_" + std::to_string(reinterpret_cast<std::uintptr_t>(obj.get()));
-
-        logger->info("Selected object: {}", objectId);
-
-        // Add to selection manager
-        MVVM::SelectionManager::getInstance().addToSelection(obj, objectId);
+    auto& selectionManager = MVVM::SelectionManager::getInstance();
+    if (selectedEntries.empty()) {
+        selectionManager.clearSelection();
+        logger->info("Selection cleared");
+    }
+    else {
+        logger->info("Selected {} objects", selectedEntries.size());
+        selectionManager.setSelection(selectedEntries,
+                                      subFeatureMap,
+                                      MVVM::SelectionInfo::SelectionType::New);
     }
 }
 
@@ -500,6 +518,43 @@ void OcctView::subscribeToEvents()
                             std::any_cast<MVVM::SelectionInfo>(message.data);
                         getOcctViewLogger()->info("Selection changed: {} objects selected",
                                                   selectionInfo.selectedObjects.size());
+
+                        if (myFeatureRecognitionViewModel
+                            && myFeatureRecognitionViewModel->getFeatureModel()) {
+                            auto featureModel = myFeatureRecognitionViewModel->getFeatureModel();
+                            auto faceIds =
+                                MVVM::SelectionManager::getInstance().getSelectedFaceIds();
+
+                            bool featureSelected = false;
+                            for (const auto& faceId : faceIds) {
+                                if (faceId.empty()) {
+                                    continue;
+                                }
+
+                                auto locations =
+                                    myFeatureRecognitionViewModel->findFeatureLocationsForFace(faceId);
+                                if (!locations.empty()) {
+                                    const auto& loc = locations.front();
+                                    if (myFeatureRecognitionViewModel->selectedGroupIndex.get() != loc.groupIndex
+                                        || myFeatureRecognitionViewModel->selectedSubGroupIndex.get() != loc.subGroupIndex
+                                        || myFeatureRecognitionViewModel->selectedFeatureIndex.get() != loc.featureIndex) {
+                                        myFeatureRecognitionViewModel->selectFeature(
+                                            loc.groupIndex,
+                                            loc.subGroupIndex,
+                                            loc.featureIndex);
+                                    }
+                                    featureSelected = true;
+                                    break;
+                                }
+                            }
+
+                            if (!featureSelected
+                                && (myFeatureRecognitionViewModel->selectedGroupIndex.get() != -1
+                                    || myFeatureRecognitionViewModel->selectedSubGroupIndex.get() != -1
+                                    || myFeatureRecognitionViewModel->selectedFeatureIndex.get() != -1)) {
+                                myFeatureRecognitionViewModel->clearSelection();
+                            }
+                        }
 
                         // Highlight selected objects in the view
                         if (!myView.IsNull()) {
@@ -598,11 +653,16 @@ void OcctView::setFeatureRecognitionViewModel(std::shared_ptr<FeatureRecognition
             myFeatureRecognitionViewModel->onFeatureSelected.connect(
                 [this](int groupIdx, int subGroupIdx, int featureIdx) {
                     getOcctViewLogger()->debug("Feature selected: group={}, subGroup={}, feature={}",
-                                             groupIdx, subGroupIdx, featureIdx);
+                                                 groupIdx, subGroupIdx, featureIdx);
 
-                    // Get face IDs for the selected feature
+                    // Get face IDs for the selected feature (supports aggregated selections)
                     auto faceIDs = myFeatureRecognitionViewModel->getFeatureFaceIDs(
                         groupIdx, subGroupIdx, featureIdx);
+
+                    if (faceIDs.empty()) {
+                        clearFeatureHighlights();
+                        return;
+                    }
 
                     // Get the color for the feature group
                     auto color = myFeatureRecognitionViewModel->getFeatureGroupColor(groupIdx);
@@ -611,14 +671,34 @@ void OcctView::setFeatureRecognitionViewModel(std::shared_ptr<FeatureRecognition
                     highlightFeatureFaces(faceIDs, color);
                 }));
 
-        // Subscribe to clear selection
+        myConnections.track(
+            myFeatureRecognitionViewModel->onRecognitionCompleted.connect([this]() {
+                updateFeatureOverview();
+            }));
+
+        // Subscribe to results availability (covers manual JSON load as well)
         myConnections.track(
             myFeatureRecognitionViewModel->hasResults.valueChanged.connect(
                 [this](const bool&, const bool& hasResults) {
-                    if (!hasResults) {
+                    if (hasResults) {
+                        updateFeatureOverview();
+                    }
+                    else {
                         clearFeatureHighlights();
+                        clearFeatureOverview();
                     }
                 }));
+
+        if (myFeatureRecognitionViewModel->hasResults.get()) {
+            updateFeatureOverview();
+        }
+        else {
+            clearFeatureOverview();
+        }
+    }
+    else {
+        clearFeatureHighlights();
+        clearFeatureOverview();
     }
 }
 
@@ -642,40 +722,55 @@ void OcctView::highlightFeatureFaces(const std::vector<std::string>& faceIDs,
         myFeatureHighlightShape.Nullify();
     }
 
-    // Get the original shape
-    const TopoDS_Shape& originalShape = featureModel->getOriginalShape();
-    if (originalShape.IsNull()) {
-        logger->warn("Original shape is null");
+    if (faceIDs.empty()) {
+        logger->debug("No faces supplied for highlighting");
+        if (!myView.IsNull()) {
+            myView->Redraw();
+        }
         return;
     }
 
-    // Create colored shape for highlighting
-    myFeatureHighlightShape = new AIS_ColoredShape(originalShape);
-    myFeatureHighlightShape->SetDisplayMode(AIS_Shaded);
+    BRep_Builder builder;
+    TopoDS_Compound highlightCompound;
+    builder.MakeCompound(highlightCompound);
 
-    // Set default transparency for all faces
-    myFeatureHighlightShape->SetTransparency(0.7);
-
-    // Highlight specific faces
+    Standard_Boolean hasFaces = Standard_False;
     for (const auto& faceID : faceIDs) {
         TopoDS_Face face = featureModel->getFaceByID(faceID);
         if (!face.IsNull()) {
-            // Set color for this face
-            myFeatureHighlightShape->SetCustomColor(face, color);
-            myFeatureHighlightShape->SetCustomTransparency(face, 0.3); // Less transparent for highlighted faces
-
-            logger->trace("Highlighted face with ID: {}", faceID);
+            builder.Add(highlightCompound, face);
+            hasFaces = Standard_True;
+            logger->trace("Highlight face {}", faceID);
         } else {
             logger->warn("Face with ID {} not found", faceID);
         }
     }
 
-    // Display the colored shape
-    context->Display(myFeatureHighlightShape, AIS_Shaded, 0, false);
-    context->Deactivate(myFeatureHighlightShape); // Don't allow selection of highlight shape
+    if (!hasFaces) {
+        logger->warn("No valid faces found to highlight");
+        if (!myView.IsNull()) {
+            myView->Redraw();
+        }
+        return;
+    }
 
-    // Force update
-    myView->Redraw();
+    Handle(AIS_ColoredShape) highlightShape = new AIS_ColoredShape(highlightCompound);
+    highlightShape->SetDisplayMode(AIS_Shaded);
+    highlightShape->SetMaterial(Graphic3d_NOM_PLASTIC);
+    highlightShape->SetColor(color);
+    highlightShape->SetTransparency(0.15f);
+    highlightShape->Attributes()->SetFaceBoundaryDraw(true);
+    highlightShape->Attributes()->SetFaceBoundaryAspect(
+        new Prs3d_LineAspect(color, Aspect_TOL_SOLID, 2.0));
+
+    myFeatureHighlightShape = highlightShape;
+    context->Display(myFeatureHighlightShape, AIS_Shaded, 0, false);
+    context->Deactivate(myFeatureHighlightShape);
+
+    if (!myView.IsNull()) {
+        myView->Redraw();
+    }
+
     logger->info("Highlighted {} faces with color RGB({:.2f}, {:.2f}, {:.2f})",
                  faceIDs.size(), color.Red(), color.Green(), color.Blue());
 }
@@ -687,8 +782,115 @@ void OcctView::clearFeatureHighlights()
 
     if (!myFeatureHighlightShape.IsNull() && myViewModel) {
         auto context = myViewModel->getContext();
-        context->Remove(myFeatureHighlightShape, true);
+        if (!context.IsNull()) {
+            context->Remove(myFeatureHighlightShape, false);
+        }
         myFeatureHighlightShape.Nullify();
         logger->info("Feature highlights cleared");
+        if (!myView.IsNull()) {
+            myView->Redraw();
+        }
     }
 }
+
+void OcctView::updateFeatureOverview()
+{
+    auto logger = getOcctViewLogger();
+
+    if (!myFeatureRecognitionViewModel || !myViewModel) {
+        clearFeatureOverview();
+        return;
+    }
+
+    auto featureModel = myFeatureRecognitionViewModel->getFeatureModel();
+    if (!featureModel || !featureModel->hasResults()) {
+        clearFeatureOverview();
+        return;
+    }
+
+    auto context = myViewModel->getContext();
+    if (context.IsNull()) {
+        logger->warn("Interactive context is null, cannot update feature overview");
+        return;
+    }
+
+    const TopoDS_Shape& originalShape = featureModel->getOriginalShape();
+    if (originalShape.IsNull()) {
+        logger->warn("Original shape is null, cannot build feature overview");
+        clearFeatureOverview();
+        return;
+    }
+
+    Handle(AIS_ColoredShape) overview = new AIS_ColoredShape(originalShape);
+    overview->SetDisplayMode(AIS_Shaded);
+    overview->SetMaterial(Graphic3d_NOM_PLASTIC);
+    overview->SetTransparency(0.45f);
+    overview->SetColor(Quantity_Color(0.62, 0.68, 0.74, Quantity_TOC_RGB));
+    overview->Attributes()->SetFaceBoundaryDraw(true);
+    overview->Attributes()->SetFaceBoundaryAspect(
+        new Prs3d_LineAspect(Quantity_Color(0.25, 0.25, 0.25, Quantity_TOC_RGB),
+                             Aspect_TOL_SOLID,
+                             1.0f));
+
+    const auto& groups = featureModel->getFeatureGroups();
+    for (int groupIdx = 0; groupIdx < static_cast<int>(groups.size()); ++groupIdx) {
+        const auto& group = groups[groupIdx];
+        auto faceIDs = featureModel->getFaceIDsForFeature(groupIdx, -1, -1);
+        if (faceIDs.empty()) {
+            continue;
+        }
+
+        for (const auto& faceID : faceIDs) {
+            TopoDS_Face face = featureModel->getFaceByID(faceID);
+            if (face.IsNull()) {
+                continue;
+            }
+
+            overview->SetCustomColor(face, group.color);
+            overview->SetCustomTransparency(face, 0.1f);
+        }
+    }
+
+    if (!myFeatureOverviewShape.IsNull()) {
+        context->Remove(myFeatureOverviewShape, false);
+    }
+
+    myFeatureOverviewShape = overview;
+    context->Display(myFeatureOverviewShape, AIS_Shaded, 0, false);
+    context->Deactivate(myFeatureOverviewShape);
+
+    if (!myFeatureHighlightShape.IsNull()) {
+        context->Display(myFeatureHighlightShape, AIS_Shaded, 0, false);
+        context->Deactivate(myFeatureHighlightShape);
+    }
+
+    if (!myView.IsNull()) {
+        myView->Redraw();
+    }
+
+    logger->info("Updated feature overview overlay for {} groups", groups.size());
+}
+
+void OcctView::clearFeatureOverview()
+{
+    if (!myViewModel) {
+        myFeatureOverviewShape.Nullify();
+        return;
+    }
+
+    if (myFeatureOverviewShape.IsNull()) {
+        return;
+    }
+
+    auto context = myViewModel->getContext();
+    if (!context.IsNull()) {
+        context->Remove(myFeatureOverviewShape, false);
+    }
+
+    myFeatureOverviewShape.Nullify();
+
+    if (!myView.IsNull()) {
+        myView->Redraw();
+    }
+}
+

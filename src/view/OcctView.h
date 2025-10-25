@@ -188,7 +188,10 @@ private:
     /** Feature recognition viewmodel for highlighting features */
     std::shared_ptr<class FeatureRecognitionViewModel> myFeatureRecognitionViewModel;
 
-    /** Colored shape for highlighting features */
+    /** Colored shape overlay for per-feature visualization */
+    Handle(class AIS_ColoredShape) myFeatureOverviewShape;
+
+    /** Colored shape for currently highlighted selection */
     Handle(class AIS_ColoredShape) myFeatureHighlightShape;
 
     /** Current highlighted shape */
@@ -220,6 +223,16 @@ private:
      * @brief Subscribes to events from the message bus
      */
     void subscribeToEvents();
+
+    /**
+     * @brief Rebuilds colored overlays for all recognized features.
+     */
+    void updateFeatureOverview();
+
+    /**
+     * @brief Removes colored overlays for recognized features.
+     */
+    void clearFeatureOverview();
 
     bool myResetViewInput = false; // 是否重置视图输入
 };

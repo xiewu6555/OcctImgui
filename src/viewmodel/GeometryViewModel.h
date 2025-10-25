@@ -146,6 +146,11 @@ public:
     }
 
     /**
+     * @brief 根据交互对象获取对应的模型 ID
+     */
+    std::string getObjectId(const Handle(AIS_InteractiveObject)& object) const;
+
+    /**
      * @brief Connection tracker for property bindings
      */
     MVVM::ConnectionTracker connections;

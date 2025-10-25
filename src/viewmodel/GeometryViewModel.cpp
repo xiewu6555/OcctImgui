@@ -124,10 +124,10 @@ void GeometryViewModel::deleteSelectedObjects()
     std::vector<std::string> objectsToDelete;
 
     // Extract object IDs from the selection
-    for (const auto& obj : selectionInfo.selectedObjects) {
-        auto it = myObjectToIdMap.find(obj);
-        if (it != myObjectToIdMap.end()) {
-            objectsToDelete.push_back(it->second);
+    for (const auto& entry : selectionInfo.selectedObjects) {
+        std::string id = !entry.id.empty() ? entry.id : getObjectId(entry.object);
+        if (!id.empty()) {
+            objectsToDelete.push_back(id);
         }
     }
 
@@ -147,10 +147,10 @@ void GeometryViewModel::setSelectedColor(const Quantity_Color& color)
     auto selectedObjects =
         MVVM::SelectionManager::getInstance().getCurrentSelection().selectedObjects;
 
-    for (const auto& obj : selectedObjects) {
-        auto it = myObjectToIdMap.find(obj);
-        if (it != myObjectToIdMap.end()) {
-            myModel->setColor(it->second, color);
+    for (const auto& entry : selectedObjects) {
+        std::string id = !entry.id.empty() ? entry.id : getObjectId(entry.object);
+        if (!id.empty()) {
+            myModel->setColor(id, color);
         }
     }
 }
@@ -165,7 +165,22 @@ Quantity_Color GeometryViewModel::getSelectedColor() const
     }
 
     // Return color of the first selected object
-    return myModel->getColor(myObjectToIdMap.at(selectedObjects[0]));
+    const auto& first = selectedObjects.front();
+    std::string id    = !first.id.empty() ? first.id : getObjectId(first.object);
+    if (!id.empty()) {
+        return myModel->getColor(id);
+    }
+
+    return Quantity_Color(0.8, 0.8, 0.8, Quantity_TOC_RGB);
+}
+
+std::string GeometryViewModel::getObjectId(const Handle(AIS_InteractiveObject)& object) const
+{
+    auto it = myObjectToIdMap.find(object);
+    if (it != myObjectToIdMap.end()) {
+        return it->second;
+    }
+    return {};
 }
 
 // Private methods

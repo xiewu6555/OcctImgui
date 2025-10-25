@@ -130,6 +130,8 @@ void FeatureRecognitionViewModel::clearSelection()
     selectedGroupIndex.set(-1);
     selectedSubGroupIndex.set(-1);
     selectedFeatureIndex.set(-1);
+
+    onFeatureSelected.emit(-1, -1, -1);
 }
 
 void FeatureRecognitionViewModel::clearResults()
@@ -182,6 +184,16 @@ Quantity_Color FeatureRecognitionViewModel::getFeatureGroupColor(int groupIdx) c
 
     // Default to gray
     return Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB);
+}
+
+std::vector<FeatureRecognitionModel::FeatureLocation>
+FeatureRecognitionViewModel::findFeatureLocationsForFace(const std::string& faceId) const
+{
+    if (!myModel)
+    {
+        return {};
+    }
+    return myModel->findFeatureLocationsForFace(faceId);
 }
 
 //=============================================================================

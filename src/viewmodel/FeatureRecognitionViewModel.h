@@ -174,6 +174,12 @@ public:
     Quantity_Color getFeatureGroupColor(int groupIdx) const;
 
     /**
+     * @brief 根据面 ID 查找所在的特征位置
+     */
+    std::vector<FeatureRecognitionModel::FeatureLocation>
+        findFeatureLocationsForFace(const std::string& faceId) const;
+
+    /**
      * @brief Gets the FeatureRecognitionModel
      * @return Shared pointer to the model
      */

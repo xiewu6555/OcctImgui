@@ -158,9 +158,23 @@ void FeatureRecognitionView::renderFeatureGroup(
         flags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)groupIdx, flags, "%s", labelStream.str().c_str());
+    bool isSelected = myViewModel->selectedGroupIndex.get() == groupIdx;
+    if (isSelected)
+    {
+        ImGui::SetNextItemOpen(true);
+    }
+
+    bool nodeOpen =
+        ImGui::TreeNodeEx((void*)(intptr_t)groupIdx, flags, "%s", labelStream.str().c_str());
+
+    bool nodeClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
 
     ImGui::PopStyleColor();
+
+    if (nodeClicked)
+    {
+        myViewModel->selectFeature(groupIdx, -1, -1);
+    }
 
     // Count badge
     ImGui::SameLine();
@@ -237,9 +251,22 @@ void FeatureRecognitionView::renderSubGroup(
     }
 
     void* nodeId = (void*)(intptr_t)(groupIdx * 1000 + subGroupIdx + 100);
+    bool isSelected = myViewModel->selectedGroupIndex.get() == groupIdx
+                      && myViewModel->selectedSubGroupIndex.get() == subGroupIdx;
+    if (isSelected)
+    {
+        ImGui::SetNextItemOpen(true);
+    }
+
     bool nodeOpen = ImGui::TreeNodeEx(nodeId, flags, "%s", labelStream.str().c_str());
+    bool nodeClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
 
     ImGui::PopStyleColor();
+
+    if (nodeClicked)
+    {
+        myViewModel->selectFeature(groupIdx, subGroupIdx, -1);
+    }
 
     // Count badge
     ImGui::SameLine();
@@ -298,6 +325,12 @@ void FeatureRecognitionView::renderFeature(
     if (ImGui::IsItemClicked())
     {
         myViewModel->selectFeature(groupIdx, subGroupIdx, featureIdx);
+    }
+    if (myViewModel->selectedGroupIndex.get() == groupIdx
+        && myViewModel->selectedSubGroupIndex.get() == subGroupIdx
+        && myViewModel->selectedFeatureIndex.get() == featureIdx)
+    {
+        ImGui::SetScrollHereY();
     }
 
     // Tooltip with face IDs

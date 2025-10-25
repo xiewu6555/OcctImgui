@@ -10,9 +10,12 @@
 #include <sstream>
 #include <regex>
 #include <limits>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <BRepTools.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopAbs.hxx>
 #include <TopoDS.hxx>
 
 #ifdef OCCTIMGUI_ENABLE_IFR
@@ -240,6 +243,7 @@ void FeatureRecognitionModel::buildFaceMap()
 {
     auto logger = Utils::Logger::getLogger("Model");
     myFaceMap.clear();
+    myFaceReverseMap.Clear();
 
     if (myOriginalShape.IsNull())
     {
@@ -252,6 +256,10 @@ void FeatureRecognitionModel::buildFaceMap()
     {
         TopoDS_Face face = TopoDS::Face(exp.Current());
         myFaceMap[std::to_string(faceIndex)] = face;
+
+        TopoDS_Face normalizedFace = face;
+        normalizedFace.Orientation(TopAbs_FORWARD);
+        myFaceReverseMap.Bind(normalizedFace, faceIndex);
         faceIndex++;
     }
 
@@ -268,11 +276,55 @@ TopoDS_Face FeatureRecognitionModel::getFaceByID(const std::string& faceID) cons
     return TopoDS_Face();  // Return null face
 }
 
+std::string FeatureRecognitionModel::getFaceId(const TopoDS_Face& face) const
+{
+    if (face.IsNull())
+    {
+        return std::string();
+    }
+
+    TopoDS_Face normalizedFace = face;
+    normalizedFace.Orientation(TopAbs_FORWARD);
+
+    if (myFaceReverseMap.IsBound(normalizedFace))
+    {
+        return std::to_string(myFaceReverseMap.Find(normalizedFace));
+    }
+
+    for (const auto& entry : myFaceMap)
+    {
+        if (face.IsSame(entry.second))
+        {
+            return entry.first;
+        }
+    }
+
+    return std::string();
+}
+
+std::vector<FeatureRecognitionModel::FeatureLocation>
+FeatureRecognitionModel::findFeatureLocationsForFace(const std::string& faceId) const
+{
+    auto it = myFaceToFeatureMap.find(faceId);
+    if (it != myFaceToFeatureMap.end())
+    {
+        return it->second;
+    }
+    return {};
+}
+
+std::vector<FeatureRecognitionModel::FeatureLocation>
+FeatureRecognitionModel::findFeatureLocationsForFace(const TopoDS_Face& face) const
+{
+    return findFeatureLocationsForFace(getFaceId(face));
+}
+
 std::vector<std::string> FeatureRecognitionModel::getFaceIDsForFeature(int groupIdx,
                                                                         int subGroupIdx,
                                                                         int featureIdx) const
 {
-    std::vector<std::string> faceIDs;
+    std::vector<std::string>        faceIDs;
+    std::unordered_set<std::string> uniqueIds;
 
     if (groupIdx < 0 || groupIdx >= static_cast<int>(myFeatureGroups.size()))
     {
@@ -281,43 +333,70 @@ std::vector<std::string> FeatureRecognitionModel::getFaceIDsForFeature(int group
 
     const auto& group = myFeatureGroups[groupIdx];
 
-    // Check if group has subGroups
+    auto appendFeatureFaces = [&uniqueIds](const Feature& feature) {
+        for (const auto& shapeID : feature.shapeIDs)
+        {
+            if (!shapeID.id.empty())
+            {
+                uniqueIds.insert(shapeID.id);
+            }
+        }
+    };
+
+    auto appendSubGroupFaces = [&](const SubGroup& subGroup) {
+        for (const auto& feature : subGroup.features)
+        {
+            appendFeatureFaces(feature);
+        }
+    };
+
+    // Group with sub-groups
     if (group.subGroups.has_value())
     {
         const auto& subGroups = group.subGroups.value();
-        if (subGroupIdx < 0 || subGroupIdx >= static_cast<int>(subGroups.size()))
-        {
-            return faceIDs;
-        }
 
-        const auto& subGroup = subGroups[subGroupIdx];
-        if (featureIdx < 0 || featureIdx >= static_cast<int>(subGroup.features.size()))
+        // Specific sub-group requested
+        if (subGroupIdx >= 0 && subGroupIdx < static_cast<int>(subGroups.size()))
         {
-            return faceIDs;
-        }
+            const auto& subGroup = subGroups[subGroupIdx];
 
-        const auto& feature = subGroup.features[featureIdx];
-        for (const auto& shapeID : feature.shapeIDs)
+            if (featureIdx >= 0 && featureIdx < static_cast<int>(subGroup.features.size()))
+            {
+                appendFeatureFaces(subGroup.features[featureIdx]);
+            }
+            else if (featureIdx < 0)
+            {
+                appendSubGroupFaces(subGroup);
+            }
+        }
+        // Whole group requested
+        else if (subGroupIdx < 0)
         {
-            faceIDs.push_back(shapeID.id);
+            for (const auto& subGroup : subGroups)
+            {
+                appendSubGroupFaces(subGroup);
+            }
         }
     }
-    // Otherwise check direct features
+    // Direct features without sub-groups
     else if (group.features.has_value())
     {
         const auto& features = group.features.value();
-        if (featureIdx < 0 || featureIdx >= static_cast<int>(features.size()))
-        {
-            return faceIDs;
-        }
 
-        const auto& feature = features[featureIdx];
-        for (const auto& shapeID : feature.shapeIDs)
+        if (featureIdx >= 0 && featureIdx < static_cast<int>(features.size()))
         {
-            faceIDs.push_back(shapeID.id);
+            appendFeatureFaces(features[featureIdx]);
+        }
+        else if (featureIdx < 0)
+        {
+            for (const auto& feature : features)
+            {
+                appendFeatureFaces(feature);
+            }
         }
     }
 
+    faceIDs.assign(uniqueIds.begin(), uniqueIds.end());
     return faceIDs;
 }
 
@@ -390,6 +469,7 @@ bool FeatureRecognitionModel::parseJsonResult(const std::string& jsonString)
 
         // Clear existing data
         myFeatureGroups.clear();
+        myFaceToFeatureMap.clear();
 
         // Navigate to featureGroups array
         if (!j.contains("parts") || !j["parts"].is_array() || j["parts"].empty())
@@ -509,6 +589,53 @@ bool FeatureRecognitionModel::parseJsonResult(const std::string& jsonString)
             myFeatureGroups.push_back(group);
         }
 
+        // Build face-to-feature lookup table
+        for (size_t groupIdx = 0; groupIdx < myFeatureGroups.size(); ++groupIdx)
+        {
+            const auto& group = myFeatureGroups[groupIdx];
+
+            if (group.subGroups.has_value())
+            {
+                const auto& subGroups = group.subGroups.value();
+                for (size_t subGroupIdx = 0; subGroupIdx < subGroups.size(); ++subGroupIdx)
+                {
+                    const auto& subGroup = subGroups[subGroupIdx];
+                    for (size_t featureIdx = 0; featureIdx < subGroup.features.size(); ++featureIdx)
+                    {
+                        const auto& feature = subGroup.features[featureIdx];
+                        FeatureLocation location{static_cast<int>(groupIdx),
+                                                 static_cast<int>(subGroupIdx),
+                                                 static_cast<int>(featureIdx)};
+                        for (const auto& shapeID : feature.shapeIDs)
+                        {
+                            if (!shapeID.id.empty())
+                            {
+                                myFaceToFeatureMap[shapeID.id].push_back(location);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (group.features.has_value())
+            {
+                const auto& features = group.features.value();
+                for (size_t featureIdx = 0; featureIdx < features.size(); ++featureIdx)
+                {
+                    const auto& feature = features[featureIdx];
+                    FeatureLocation location{static_cast<int>(groupIdx),
+                                             -1,
+                                             static_cast<int>(featureIdx)};
+                    for (const auto& shapeID : feature.shapeIDs)
+                    {
+                        if (!shapeID.id.empty())
+                        {
+                            myFaceToFeatureMap[shapeID.id].push_back(location);
+                        }
+                    }
+                }
+            }
+        }
+
         logger->info("Parsed {} feature groups from JSON", myFeatureGroups.size());
         return true;
     }
@@ -535,5 +662,7 @@ void FeatureRecognitionModel::clear()
     myJsonResult.clear();
     myFeatureGroups.clear();
     myFaceMap.clear();
+    myFaceReverseMap.Clear();
+    myFaceToFeatureMap.clear();
     myLastError.clear();
 }
