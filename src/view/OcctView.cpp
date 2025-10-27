@@ -757,11 +757,12 @@ void OcctView::highlightFeatureFaces(const std::vector<std::string>& faceIDs,
     Handle(AIS_ColoredShape) highlightShape = new AIS_ColoredShape(highlightCompound);
     highlightShape->SetDisplayMode(AIS_Shaded);
     highlightShape->SetMaterial(Graphic3d_NOM_PLASTIC);
-    highlightShape->SetColor(color);
-    highlightShape->SetTransparency(0.15f);
+    Quantity_Color highlightColor(Quantity_NOC_YELLOW);
+    highlightShape->SetColor(highlightColor);
+    highlightShape->SetTransparency(0.05f);
     highlightShape->Attributes()->SetFaceBoundaryDraw(true);
     highlightShape->Attributes()->SetFaceBoundaryAspect(
-        new Prs3d_LineAspect(color, Aspect_TOL_SOLID, 2.0));
+        new Prs3d_LineAspect(highlightColor, Aspect_TOL_SOLID, 2.5f));
 
     myFeatureHighlightShape = highlightShape;
     context->Display(myFeatureHighlightShape, AIS_Shaded, 0, false);
@@ -824,8 +825,8 @@ void OcctView::updateFeatureOverview()
     Handle(AIS_ColoredShape) overview = new AIS_ColoredShape(originalShape);
     overview->SetDisplayMode(AIS_Shaded);
     overview->SetMaterial(Graphic3d_NOM_PLASTIC);
-    overview->SetTransparency(0.45f);
-    overview->SetColor(Quantity_Color(0.62, 0.68, 0.74, Quantity_TOC_RGB));
+    overview->SetTransparency(0.65f);
+    overview->SetColor(Quantity_Color(0.32, 0.36, 0.42, Quantity_TOC_RGB));
     overview->Attributes()->SetFaceBoundaryDraw(true);
     overview->Attributes()->SetFaceBoundaryAspect(
         new Prs3d_LineAspect(Quantity_Color(0.25, 0.25, 0.25, Quantity_TOC_RGB),
