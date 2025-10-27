@@ -140,14 +140,15 @@ void FeatureRecognitionView::renderFeatureGroup(
 {
     auto logger = Utils::Logger::getLogger("View");
 
-    // Convert color to ImGui format
-    ImVec4 color = toImGuiColor(group.color);
+    const bool groupVisible = myViewModel->isGroupVisible(groupIdx);
+    ImVec4 baseColor = toImGuiColor(group.color);
+    ImVec4 textColor = applyVisibilityTint(baseColor, groupVisible);
 
     // Build node label with color indicator
     std::ostringstream labelStream;
     labelStream << group.name;
 
-    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    ImGui::PushStyleColor(ImGuiCol_Text, textColor);
 
     // Tree node flags
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
@@ -178,15 +179,17 @@ void FeatureRecognitionView::renderFeatureGroup(
 
     // Count badge
     ImGui::SameLine();
-    renderColoredBadge(std::to_string(group.totalGroupFeatureCount), color);
+    renderColoredBadge(std::to_string(group.totalGroupFeatureCount), textColor);
 
     // Visibility toggle icon
     ImGui::SameLine();
-    std::string visIcon = group.visible ? ICON_EYE : ICON_EYE_SLASH;  // Using placeholder
+    std::string visIcon = groupVisible ? ICON_EYE : ICON_EYE_SLASH;  // Using placeholder
+    ImGui::PushStyleColor(ImGuiCol_Text, textColor);
     if (ImGui::SmallButton((visIcon + "##vis" + std::to_string(groupIdx)).c_str()))
     {
         myViewModel->toggleFeatureGroupVisibility(groupIdx);
     }
+    ImGui::PopStyleColor();
 
     // Render children if node is open
     if (nodeOpen)
@@ -236,9 +239,11 @@ void FeatureRecognitionView::renderSubGroup(
         labelStream << ")";
     }
 
+    const bool groupVisible = myViewModel->isGroupVisible(groupIdx);
     ImVec4 color = toImGuiColor(group.color);
+    ImVec4 textColor = applyVisibilityTint(color, groupVisible);
 
-    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    ImGui::PushStyleColor(ImGuiCol_Text, textColor);
 
     // Tree node flags
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
@@ -270,7 +275,7 @@ void FeatureRecognitionView::renderSubGroup(
 
     // Count badge
     ImGui::SameLine();
-    renderColoredBadge(std::to_string(subGroup.featureCount), color);
+    renderColoredBadge(std::to_string(subGroup.featureCount), textColor);
 
     // Render children if node is open
     if (nodeOpen)
@@ -301,9 +306,11 @@ void FeatureRecognitionView::renderFeature(
     std::ostringstream labelStream;
     labelStream << "Feature " << (featureIdx + 1);
 
+    const bool groupVisible = myViewModel->isGroupVisible(groupIdx);
     ImVec4 imColor = toImGuiColor(color);
+    ImVec4 textColor = applyVisibilityTint(imColor, groupVisible);
 
-    ImGui::PushStyleColor(ImGuiCol_Text, imColor);
+    ImGui::PushStyleColor(ImGuiCol_Text, textColor);
 
     // Tree node flags
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
@@ -395,6 +402,20 @@ ImVec4 FeatureRecognitionView::toImGuiColor(const Quantity_Color& color) const
                   static_cast<float>(color.Green()),
                   static_cast<float>(color.Blue()),
                   1.0f);
+}
+
+ImVec4 FeatureRecognitionView::applyVisibilityTint(const ImVec4& color, bool isVisible) const
+{
+    if (isVisible)
+    {
+        return color;
+    }
+
+    ImVec4 disabled = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+    return ImVec4((color.x + disabled.x) * 0.5f,
+                  (color.y + disabled.y) * 0.5f,
+                  (color.z + disabled.z) * 0.5f,
+                  color.w);
 }
 
 void FeatureRecognitionView::renderColoredBadge(const std::string& text, const ImVec4& color)

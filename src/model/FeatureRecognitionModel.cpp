@@ -319,6 +319,28 @@ FeatureRecognitionModel::findFeatureLocationsForFace(const TopoDS_Face& face) co
     return findFeatureLocationsForFace(getFaceId(face));
 }
 
+bool FeatureRecognitionModel::toggleGroupVisibility(int groupIdx)
+{
+    if (groupIdx < 0 || groupIdx >= static_cast<int>(myFeatureGroups.size()))
+    {
+        return true;
+    }
+
+    auto& group = myFeatureGroups[groupIdx];
+    group.visible = !group.visible;
+    notifyChange("feature_recognition_result");
+    return group.visible;
+}
+
+bool FeatureRecognitionModel::isGroupVisible(int groupIdx) const
+{
+    if (groupIdx < 0 || groupIdx >= static_cast<int>(myFeatureGroups.size()))
+    {
+        return true;
+    }
+    return myFeatureGroups[groupIdx].visible;
+}
+
 std::vector<std::string> FeatureRecognitionModel::getFaceIDsForFeature(int groupIdx,
                                                                         int subGroupIdx,
                                                                         int featureIdx) const

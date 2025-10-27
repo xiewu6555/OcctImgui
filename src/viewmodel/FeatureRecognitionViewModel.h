@@ -174,6 +174,11 @@ public:
     Quantity_Color getFeatureGroupColor(int groupIdx) const;
 
     /**
+     * @brief Returns whether a feature group is visible
+     */
+    bool isGroupVisible(int groupIdx) const;
+
+    /**
      * @brief 根据面 ID 查找所在的特征位置
      */
     std::vector<FeatureRecognitionModel::FeatureLocation>

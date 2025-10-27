@@ -150,6 +150,11 @@ public:
     void highlightFeatureFaces(const std::vector<std::string>& faceIDs, const Quantity_Color& color);
 
     /**
+     * @brief Reapplies the current selection highlight (if any)
+     */
+    void refreshCurrentFeatureHighlight();
+
+    /**
      * @brief Clears all feature highlights
      */
     void clearFeatureHighlights();

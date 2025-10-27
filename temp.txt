@@ -174,17 +174,6 @@ public:
     std::vector<FeatureLocation> findFeatureLocationsForFace(const TopoDS_Face& face) const;
 
     /**
-     * @brief Toggles visibility of a feature group
-     * @return New visibility state, or current state if index invalid
-     */
-    bool toggleGroupVisibility(int groupIdx);
-
-    /**
-     * @brief Checks group visibility
-     */
-    bool isGroupVisible(int groupIdx) const;
-
-    /**
      * @brief Builds the face ID map from the original shape
      */
     void buildFaceMap();

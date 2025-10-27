@@ -166,6 +166,11 @@ private:
     ImVec4 toImGuiColor(const Quantity_Color& color) const;
 
     /**
+     * @brief Applies a disabled tint when the owning group is hidden
+     */
+    ImVec4 applyVisibilityTint(const ImVec4& color, bool isVisible) const;
+
+    /**
      * @brief Renders a colored badge with text
      * @param text The badge text
      * @param color The badge color

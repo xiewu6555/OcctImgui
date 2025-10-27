@@ -110,18 +110,8 @@ void FeatureRecognitionViewModel::toggleFeatureGroupVisibility(int groupIdx)
 {
     auto logger = Utils::Logger::getLogger("ViewModel");
 
-    const auto& groups = myModel->getFeatureGroups();
-    if (groupIdx < 0 || groupIdx >= static_cast<int>(groups.size()))
-    {
-        logger->warn("Invalid feature group index: {}", groupIdx);
-        return;
-    }
-
-    // Note: We need to modify the model to support visibility
-    // For now, just emit the signal
-    bool newVisibility = !groups[groupIdx].visible;
-    logger->debug("Toggling feature group {} visibility to {}", groupIdx, newVisibility);
-
+    bool newVisibility = myModel->toggleGroupVisibility(groupIdx);
+    logger->debug("Toggled feature group {} visibility to {}", groupIdx, newVisibility);
     onFeatureVisibilityChanged.emit(groupIdx, newVisibility);
 }
 
@@ -184,6 +174,11 @@ Quantity_Color FeatureRecognitionViewModel::getFeatureGroupColor(int groupIdx) c
 
     // Default to gray
     return Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB);
+}
+
+bool FeatureRecognitionViewModel::isGroupVisible(int groupIdx) const
+{
+    return myModel->isGroupVisible(groupIdx);
 }
 
 std::vector<FeatureRecognitionModel::FeatureLocation>

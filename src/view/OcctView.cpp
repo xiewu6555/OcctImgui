@@ -654,27 +654,22 @@ void OcctView::setFeatureRecognitionViewModel(std::shared_ptr<FeatureRecognition
                 [this](int groupIdx, int subGroupIdx, int featureIdx) {
                     getOcctViewLogger()->debug("Feature selected: group={}, subGroup={}, feature={}",
                                                  groupIdx, subGroupIdx, featureIdx);
-
-                    // Get face IDs for the selected feature (supports aggregated selections)
-                    auto faceIDs = myFeatureRecognitionViewModel->getFeatureFaceIDs(
-                        groupIdx, subGroupIdx, featureIdx);
-
-                    if (faceIDs.empty()) {
-                        clearFeatureHighlights();
-                        return;
-                    }
-
-                    // Get the color for the feature group
-                    auto color = myFeatureRecognitionViewModel->getFeatureGroupColor(groupIdx);
-
-                    // Highlight the faces
-                    highlightFeatureFaces(faceIDs, color);
+                    refreshCurrentFeatureHighlight();
                 }));
 
         myConnections.track(
             myFeatureRecognitionViewModel->onRecognitionCompleted.connect([this]() {
                 updateFeatureOverview();
             }));
+
+        myConnections.track(
+            myFeatureRecognitionViewModel->onFeatureVisibilityChanged.connect(
+                [this](int groupIdx, bool visible) {
+                    getOcctViewLogger()->debug("Feature group {} visibility changed to {}",
+                                               groupIdx, visible);
+                    updateFeatureOverview();
+                    refreshCurrentFeatureHighlight();
+                }));
 
         // Subscribe to results availability (covers manual JSON load as well)
         myConnections.track(
@@ -757,12 +752,16 @@ void OcctView::highlightFeatureFaces(const std::vector<std::string>& faceIDs,
     Handle(AIS_ColoredShape) highlightShape = new AIS_ColoredShape(highlightCompound);
     highlightShape->SetDisplayMode(AIS_Shaded);
     highlightShape->SetMaterial(Graphic3d_NOM_PLASTIC);
-    Quantity_Color highlightColor(Quantity_NOC_YELLOW);
+
+    // 使用固定的高亮黄颜色，使选中特征在任何场景下都足够醒目
+    Quantity_Color highlightColor(1.0, 0.9, 0.05, Quantity_TOC_RGB);
     highlightShape->SetColor(highlightColor);
-    highlightShape->SetTransparency(0.05f);
+    highlightShape->SetTransparency(0.02f);
     highlightShape->Attributes()->SetFaceBoundaryDraw(true);
     highlightShape->Attributes()->SetFaceBoundaryAspect(
-        new Prs3d_LineAspect(highlightColor, Aspect_TOL_SOLID, 2.5f));
+        new Prs3d_LineAspect(Quantity_Color(0.1, 0.1, 0.1, Quantity_TOC_RGB),
+                             Aspect_TOL_SOLID,
+                             3.0f));
 
     myFeatureHighlightShape = highlightShape;
     context->Display(myFeatureHighlightShape, AIS_Shaded, 0, false);
@@ -774,6 +773,32 @@ void OcctView::highlightFeatureFaces(const std::vector<std::string>& faceIDs,
 
     logger->info("Highlighted {} faces with color RGB({:.2f}, {:.2f}, {:.2f})",
                  faceIDs.size(), color.Red(), color.Green(), color.Blue());
+}
+
+void OcctView::refreshCurrentFeatureHighlight()
+{
+    if (!myFeatureRecognitionViewModel) {
+        clearFeatureHighlights();
+        return;
+    }
+
+    const int groupIdx = myFeatureRecognitionViewModel->selectedGroupIndex.get();
+    if (groupIdx < 0) {
+        clearFeatureHighlights();
+        return;
+    }
+
+    const int subGroupIdx = myFeatureRecognitionViewModel->selectedSubGroupIndex.get();
+    const int featureIdx = myFeatureRecognitionViewModel->selectedFeatureIndex.get();
+    auto faceIDs = myFeatureRecognitionViewModel->getFeatureFaceIDs(groupIdx, subGroupIdx, featureIdx);
+
+    if (faceIDs.empty()) {
+        clearFeatureHighlights();
+        return;
+    }
+
+    auto color = myFeatureRecognitionViewModel->getFeatureGroupColor(groupIdx);
+    highlightFeatureFaces(faceIDs, color);
 }
 
 void OcctView::clearFeatureHighlights()
@@ -836,6 +861,9 @@ void OcctView::updateFeatureOverview()
     const auto& groups = featureModel->getFeatureGroups();
     for (int groupIdx = 0; groupIdx < static_cast<int>(groups.size()); ++groupIdx) {
         const auto& group = groups[groupIdx];
+        if (!featureModel->isGroupVisible(groupIdx)) {
+            continue;
+        }
         auto faceIDs = featureModel->getFaceIDsForFeature(groupIdx, -1, -1);
         if (faceIDs.empty()) {
             continue;
