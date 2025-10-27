@@ -11,6 +11,7 @@
 #include <MeshVS_MeshPrsBuilder.hxx>
 #include <Precision.hxx>
 #include <TColStd_HPackedMapOfInteger.hxx>
+#include <TopAbs_ShapeEnum.hxx>
 #include <TopoDS_Builder.hxx>
 #include <algorithm>
 #include <iostream>
@@ -208,6 +209,12 @@ void GeometryViewModel::updatePresentation(const std::string& id)
 
     // Display object
     myContext->Display(aisObj, false);
+
+    // Activate face selection for AIS_Shape objects to support feature picking.
+    Handle(AIS_Shape) displayedShape = Handle(AIS_Shape)::DownCast(aisObj);
+    if (!displayedShape.IsNull()) {
+        myContext->Activate(displayedShape, AIS_Shape::SelectionMode(TopAbs_FACE), Standard_False);
+    }
 
     // Update mapping
     myIdToObjectMap[id] = aisObj;
