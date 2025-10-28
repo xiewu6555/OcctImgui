@@ -13,7 +13,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE})
 find_package(imgui REQUIRED)
 find_package(OpenCASCADE REQUIRED)
 find_package(Netgen CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS signals2 unit_test_framework)
+find_package(Boost REQUIRED COMPONENTS signals2 unit_test_framework filesystem system)
 find_package(spdlog REQUIRED)
 option(LIBIGL_USE_STATIC_LIBRARY "Use libIGL as static library" ON)
 find_package(libigl REQUIRED)
@@ -24,18 +24,98 @@ find_package(nlohmann_json REQUIRED)
 add_subdirectory(third_party/nfd EXCLUDE_FROM_ALL)
 
 # IFR integration
-set(IFR_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/IFR/installed")
-if(EXISTS "${IFR_INSTALL_DIR}/include" AND EXISTS "${IFR_INSTALL_DIR}/lib/featureRecognizer.lib")
-    message(STATUS "IFR detected at ${IFR_INSTALL_DIR}")
-    set(OCCTIMGUI_ENABLE_IFR ON)
-else()
-    message(WARNING "IFR installed directory not found. Feature recognition will use mock implementation.")
-endif()
+option(OCCTIMGUI_IFR_USE_SOURCE "Build IFR feature recognizer directly from source instead of linking the prebuilt binaries" OFF)
+set(IFR_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/IFR")
+set(IFR_INSTALL_DIR "${IFR_ROOT_DIR}/installed")
+set(OCCTIMGUI_ENABLE_IFR OFF)
+set(IFR_LINK_TARGET "")
 
-# Add IFR (Interactive Feature Recognition) library
-# Temporarily disabled due to compilation issues in submodule
-# TODO: Enable when IFR compilation issues are resolved
-# include(IFR_wrapper.cmake)
+if(OCCTIMGUI_IFR_USE_SOURCE)
+    if(EXISTS "${IFR_ROOT_DIR}/src/featureRecognizer/recognizer/CNC_FeatureRecognizer.h")
+        include(ExternalProject)
+
+        set(IFR_EXTERNAL_BUILD_DIR "${CMAKE_BINARY_DIR}/ifr_build")
+        set(IFR_EXTERNAL_INSTALL_DIR "${CMAKE_BINARY_DIR}/ifr_install")
+
+        set(IFR_EP_CMAKE_ARGS
+            -DCMAKE_INSTALL_PREFIX=${IFR_EXTERNAL_INSTALL_DIR}
+            -DVCPKG_MANIFEST_MODE=OFF
+        )
+
+        if(CMAKE_TOOLCHAIN_FILE)
+            list(APPEND IFR_EP_CMAKE_ARGS "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
+        endif()
+        if(DEFINED VCPKG_TARGET_TRIPLET)
+            list(APPEND IFR_EP_CMAKE_ARGS "-DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
+        endif()
+        if(CMAKE_PREFIX_PATH)
+            list(JOIN CMAKE_PREFIX_PATH ";" IFR_PREFIX_PATH_JOINED)
+            list(APPEND IFR_EP_CMAKE_ARGS "-DCMAKE_PREFIX_PATH=${IFR_PREFIX_PATH_JOINED}")
+        endif()
+        list(APPEND IFR_EP_CMAKE_ARGS "-DVCPKG_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/vcpkg")
+        if(CMAKE_BUILD_TYPE)
+            list(APPEND IFR_EP_CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
+        endif()
+        if(DEFINED OpenCASCADE_DIR)
+            list(APPEND IFR_EP_CMAKE_ARGS "-DOpenCASCADE_DIR=${OpenCASCADE_DIR}")
+        endif()
+
+        set(IFR_EP_CONFIG_ARGS "")
+        if(CMAKE_CONFIGURATION_TYPES)
+            set(IFR_EP_CONFIG_ARGS --config ${CMAKE_CFG_INTDIR})
+        elseif(CMAKE_BUILD_TYPE)
+            set(IFR_EP_CONFIG_ARGS --config ${CMAKE_BUILD_TYPE})
+        endif()
+
+        ExternalProject_Add(IFRExternal
+            SOURCE_DIR ${IFR_ROOT_DIR}
+            BINARY_DIR ${IFR_EXTERNAL_BUILD_DIR}
+            CMAKE_GENERATOR ${CMAKE_GENERATOR}
+            CMAKE_GENERATOR_PLATFORM ${CMAKE_GENERATOR_PLATFORM}
+            CMAKE_GENERATOR_TOOLSET ${CMAKE_GENERATOR_TOOLSET}
+            CMAKE_ARGS ${IFR_EP_CMAKE_ARGS}
+            BUILD_BYPRODUCTS "${IFR_EXTERNAL_INSTALL_DIR}/lib/featureRecognizer.lib"
+            UPDATE_COMMAND ""
+            BUILD_COMMAND ${CMAKE_COMMAND} --build . ${IFR_EP_CONFIG_ARGS}
+            INSTALL_COMMAND ${CMAKE_COMMAND} --build . --target install ${IFR_EP_CONFIG_ARGS}
+        )
+
+        file(MAKE_DIRECTORY
+            "${IFR_EXTERNAL_INSTALL_DIR}/include"
+            "${IFR_EXTERNAL_INSTALL_DIR}/lib"
+            "${IFR_EXTERNAL_INSTALL_DIR}/bin"
+        )
+
+        add_library(ifr_featureRecognizer SHARED IMPORTED GLOBAL)
+        set_target_properties(ifr_featureRecognizer PROPERTIES
+            IMPORTED_IMPLIB "${IFR_EXTERNAL_INSTALL_DIR}/lib/featureRecognizer.lib"
+            IMPORTED_LOCATION "${IFR_EXTERNAL_INSTALL_DIR}/bin/featureRecognizer.dll"
+            INTERFACE_INCLUDE_DIRECTORIES "${IFR_EXTERNAL_INSTALL_DIR}/include"
+        )
+
+        add_dependencies(ifr_featureRecognizer IFRExternal)
+
+        set(IFR_INSTALL_DIR "${IFR_EXTERNAL_INSTALL_DIR}")
+        set(IFR_LINK_TARGET ifr_featureRecognizer)
+        set(OCCTIMGUI_ENABLE_IFR ON)
+    else()
+        message(FATAL_ERROR "OCCTIMGUI_IFR_USE_SOURCE is ON, but IFR sources were not found at ${IFR_ROOT_DIR}")
+    endif()
+else()
+    if(EXISTS "${IFR_INSTALL_DIR}/include" AND EXISTS "${IFR_INSTALL_DIR}/lib/featureRecognizer.lib")
+        message(STATUS "IFR detected at ${IFR_INSTALL_DIR}")
+        add_library(ifr_featureRecognizer SHARED IMPORTED GLOBAL)
+        set_target_properties(ifr_featureRecognizer PROPERTIES
+            IMPORTED_IMPLIB "${IFR_INSTALL_DIR}/lib/featureRecognizer.lib"
+            IMPORTED_LOCATION "${IFR_INSTALL_DIR}/bin/featureRecognizer.dll"
+            INTERFACE_INCLUDE_DIRECTORIES "${IFR_INSTALL_DIR}/include"
+        )
+        set(IFR_LINK_TARGET ifr_featureRecognizer)
+        set(OCCTIMGUI_ENABLE_IFR ON)
+    else()
+        message(WARNING "IFR installed directory not found. Feature recognition will use mock implementation.")
+    endif()
+endif()
 
 # Enable testing with CTest
 include(CTest)
@@ -81,20 +161,39 @@ endif()
 
 target_include_directories(OcctImguiLib
     PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src # Only keep the src directory in the include path
-    ${CMAKE_CURRENT_SOURCE_DIR} # For IFR includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+set(OCCTIMGUI_IFR_LOCAL_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/auxiliary
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/algorithm
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/canrec
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/hlr
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/interop
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/asiActiveDataAPI
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/asiActiveDataMesh
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/features
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/hybridGraph
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/mesh
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/mesh/algorithm
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/mesh/utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/IFR
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/recognizer
+    ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/VF3/include
 )
 
 if(OCCTIMGUI_ENABLE_IFR)
-    target_include_directories(OcctImguiLib
-        PUBLIC
-        ${IFR_INSTALL_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep
-        ${CMAKE_CURRENT_SOURCE_DIR}/IFR/src/featureRecognizer/brep/auxiliary
-    )
-    target_link_libraries(OcctImguiLib PUBLIC "${IFR_INSTALL_DIR}/lib/featureRecognizer.lib")
+    target_link_libraries(OcctImguiLib PUBLIC ${IFR_LINK_TARGET})
     target_compile_definitions(OcctImguiLib PUBLIC OCCTIMGUI_ENABLE_IFR)
+    target_include_directories(OcctImguiLib PUBLIC ${OCCTIMGUI_IFR_LOCAL_INCLUDE_DIRS})
+
+    if(OCCTIMGUI_IFR_USE_SOURCE)
+        add_dependencies(OcctImguiLib IFRExternal)
+    endif()
 endif()
 
 target_link_libraries(OcctImguiLib
@@ -109,6 +208,8 @@ target_link_libraries(OcctImguiLib
     nfd::nfd
     igl_copyleft::igl_copyleft_cgal
     Boost::signals2
+    Boost::filesystem
+    Boost::system
     nlohmann_json::nlohmann_json
 )
 
@@ -131,11 +232,22 @@ target_link_libraries(OcctImgui
     OcctImguiLib
 )
 
+if(OCCTIMGUI_ENABLE_IFR AND OCCTIMGUI_IFR_USE_SOURCE)
+    add_dependencies(OcctImgui IFRExternal)
+endif()
+
 if(OCCTIMGUI_ENABLE_IFR AND WIN32)
-    add_custom_command(TARGET OcctImgui POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${IFR_INSTALL_DIR}/bin/featureRecognizer.dll"
-            $<TARGET_FILE_DIR:OcctImgui>)
+    if(OCCTIMGUI_IFR_USE_SOURCE)
+        add_custom_command(TARGET OcctImgui POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:ifr_featureRecognizer>
+                $<TARGET_FILE_DIR:OcctImgui>)
+    else()
+        add_custom_command(TARGET OcctImgui POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${IFR_INSTALL_DIR}/bin/featureRecognizer.dll"
+                $<TARGET_FILE_DIR:OcctImgui>)
+    endif()
 endif()
 
 target_compile_options(OcctImgui PRIVATE
