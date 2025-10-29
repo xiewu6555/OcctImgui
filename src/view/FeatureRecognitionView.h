@@ -14,6 +14,7 @@
 
 #include <imgui.h>
 #include <memory>
+#include <optional>
 #include <string>
 
 /**
@@ -99,6 +100,21 @@ private:
 
     /** Search/filter text */
     char myFilterText[256] = "";
+
+    struct SelectionCoordinates
+    {
+        int group = -1;
+        int subGroup = -1;
+        int feature = -1;
+
+        bool matches(int groupIdx, int subGroupIdx, int featureIdx) const
+        {
+            return group == groupIdx && subGroup == subGroupIdx && feature == featureIdx;
+        }
+    };
+
+    /** Pending scroll target to ensure the latest selection is visible */
+    std::optional<SelectionCoordinates> myPendingScrollSelection;
 
     // ========== UI Rendering Methods ==========
 
@@ -190,6 +206,16 @@ private:
      * @return true if matches, false otherwise
      */
     bool matchesFilter(const std::string& text) const;
+
+    /**
+     * @brief Queue a scroll request for the given selection
+     */
+    void queueScrollToSelection(int groupIdx, int subGroupIdx, int featureIdx);
+
+    /**
+     * @brief Consume a pending scroll request if it targets the current node
+     */
+    bool consumeScrollRequest(int groupIdx, int subGroupIdx, int featureIdx);
 
     // ========== Event Subscriptions ==========
 

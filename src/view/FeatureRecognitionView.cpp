@@ -168,6 +168,11 @@ void FeatureRecognitionView::renderFeatureGroup(
     bool nodeOpen =
         ImGui::TreeNodeEx((void*)(intptr_t)groupIdx, flags, "%s", labelStream.str().c_str());
 
+    if (isSelected && consumeScrollRequest(groupIdx, -1, -1))
+    {
+        ImGui::SetScrollHereY();
+    }
+
     bool nodeClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
 
     ImGui::PopStyleColor();
@@ -175,6 +180,7 @@ void FeatureRecognitionView::renderFeatureGroup(
     if (nodeClicked)
     {
         myViewModel->selectFeature(groupIdx, -1, -1);
+        queueScrollToSelection(groupIdx, -1, -1);
     }
 
     // Count badge
@@ -264,6 +270,12 @@ void FeatureRecognitionView::renderSubGroup(
     }
 
     bool nodeOpen = ImGui::TreeNodeEx(nodeId, flags, "%s", labelStream.str().c_str());
+
+    if (isSelected && consumeScrollRequest(groupIdx, subGroupIdx, -1))
+    {
+        ImGui::SetScrollHereY();
+    }
+
     bool nodeClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
 
     ImGui::PopStyleColor();
@@ -271,6 +283,7 @@ void FeatureRecognitionView::renderSubGroup(
     if (nodeClicked)
     {
         myViewModel->selectFeature(groupIdx, subGroupIdx, -1);
+        queueScrollToSelection(groupIdx, subGroupIdx, -1);
     }
 
     // Count badge
@@ -315,10 +328,12 @@ void FeatureRecognitionView::renderFeature(
     // Tree node flags
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
+    bool isSelected = myViewModel->selectedGroupIndex.get() == groupIdx
+                      && myViewModel->selectedSubGroupIndex.get() == subGroupIdx
+                      && myViewModel->selectedFeatureIndex.get() == featureIdx;
+
     // Highlight if selected
-    if (myViewModel->selectedGroupIndex.get() == groupIdx &&
-        myViewModel->selectedSubGroupIndex.get() == subGroupIdx &&
-        myViewModel->selectedFeatureIndex.get() == featureIdx)
+    if (isSelected)
     {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
@@ -326,18 +341,20 @@ void FeatureRecognitionView::renderFeature(
     void* nodeId = (void*)(intptr_t)(groupIdx * 10000 + (subGroupIdx + 1) * 100 + featureIdx);
     ImGui::TreeNodeEx(nodeId, flags, "%s", labelStream.str().c_str());
 
+    if (isSelected && consumeScrollRequest(groupIdx, subGroupIdx, featureIdx))
+    {
+        ImGui::SetScrollHereY();
+    }
+
+    bool itemClicked = ImGui::IsItemClicked();
+
     ImGui::PopStyleColor();
 
     // Handle selection
-    if (ImGui::IsItemClicked())
+    if (itemClicked)
     {
         myViewModel->selectFeature(groupIdx, subGroupIdx, featureIdx);
-    }
-    if (myViewModel->selectedGroupIndex.get() == groupIdx
-        && myViewModel->selectedSubGroupIndex.get() == subGroupIdx
-        && myViewModel->selectedFeatureIndex.get() == featureIdx)
-    {
-        ImGui::SetScrollHereY();
+        queueScrollToSelection(groupIdx, subGroupIdx, featureIdx);
     }
 
     // Tooltip with face IDs
@@ -464,6 +481,33 @@ std::string FeatureRecognitionView::formatParameterValue(
     return oss.str();
 }
 
+void FeatureRecognitionView::queueScrollToSelection(int groupIdx, int subGroupIdx, int featureIdx)
+{
+    if (groupIdx < 0)
+    {
+        myPendingScrollSelection.reset();
+        return;
+    }
+
+    myPendingScrollSelection = SelectionCoordinates{groupIdx, subGroupIdx, featureIdx};
+}
+
+bool FeatureRecognitionView::consumeScrollRequest(int groupIdx, int subGroupIdx, int featureIdx)
+{
+    if (!myPendingScrollSelection.has_value())
+    {
+        return false;
+    }
+
+    if (!myPendingScrollSelection->matches(groupIdx, subGroupIdx, featureIdx))
+    {
+        return false;
+    }
+
+    myPendingScrollSelection.reset();
+    return true;
+}
+
 bool FeatureRecognitionView::matchesFilter(const std::string& text) const
 {
     if (strlen(myFilterText) == 0)
@@ -502,6 +546,15 @@ void FeatureRecognitionView::subscribeToViewModelEvents()
             auto logger = Utils::Logger::getLogger("View");
             logger->debug("hasResults changed to: {}", hasResults);
         }));
+
+    myConnections.track(myViewModel->onFeatureSelected.connect(
+        [this](int groupIdx, int subGroupIdx, int featureIdx) {
+            queueScrollToSelection(groupIdx, subGroupIdx, featureIdx);
+        }));
+
+    queueScrollToSelection(myViewModel->selectedGroupIndex.get(),
+                           myViewModel->selectedSubGroupIndex.get(),
+                           myViewModel->selectedFeatureIndex.get());
 }
 
 void FeatureRecognitionView::subscribeToMessageBus()
