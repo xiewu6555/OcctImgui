@@ -240,4 +240,8 @@ private:
     void clearFeatureOverview();
 
     bool myResetViewInput = false; // 是否重置视图输入
+    bool myLeftButtonPressed = false;
+    bool myLeftButtonDragDetected = false;
+    int myLeftButtonPressPosX = 0;
+    int myLeftButtonPressPosY = 0;
 };

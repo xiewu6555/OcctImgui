@@ -26,6 +26,7 @@
 
 #include <imgui.h>
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <sstream>
 #include <vector>
@@ -68,6 +69,8 @@ static Aspect_VKeyFlags keyFlagsFromGlfw(int theFlags)
     }
     return aFlags;
 }
+
+constexpr int LEFT_CLICK_DRAG_THRESHOLD = 3;
 }  // namespace
 
 OcctView::OcctView(std::shared_ptr<GeometryViewModel> viewModel, Handle(GlfwOcctWindow) window)
@@ -213,6 +216,14 @@ void OcctView::onMouseMove(int posX, int posY)
     }
 
     const Graphic3d_Vec2i aNewPos(posX, posY);
+
+    if (myLeftButtonPressed && !myLeftButtonDragDetected) {
+        if (std::abs(posX - myLeftButtonPressPosX) > LEFT_CLICK_DRAG_THRESHOLD
+            || std::abs(posY - myLeftButtonPressPosY) > LEFT_CLICK_DRAG_THRESHOLD) {
+            myLeftButtonDragDetected = true;
+        }
+    }
+
     UpdateMousePosition(aNewPos, PressedMouseButtons(), LastMouseFlags(), Standard_False);
 }
 
@@ -226,25 +237,42 @@ void OcctView::onMouseButton(int button, int action, int mods)
     }
 
     const Graphic3d_Vec2i aPos = myWindow->CursorPosition();
+    ImGuiIO&              io   = ImGui::GetIO();
+    bool                  wantCapture = io.WantCaptureMouse;
 
     // Handle OCCT view control
     if (action == GLFW_PRESS) {
         PressMouseButton(aPos, mouseButtonFromGlfw(button), keyFlagsFromGlfw(mods), false);
 
-        // Handle selection on left click without modifiers
-        if (button == GLFW_MOUSE_BUTTON_LEFT && (mods & GLFW_MOD_CONTROL) == 0) {
-            handleSelection(aPos.x(), aPos.y());
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            myLeftButtonPressed = true;
+            myLeftButtonDragDetected = false;
+            myLeftButtonPressPosX = aPos.x();
+            myLeftButtonPressPosY = aPos.y();
         }
+
         // Right click to clear selection
-        else if (button == GLFW_MOUSE_BUTTON_RIGHT && (mods & GLFW_MOD_CONTROL) == 0) {
+        if (button == GLFW_MOUSE_BUTTON_RIGHT && (mods & GLFW_MOD_CONTROL) == 0 && !wantCapture) {
             // Popup a context menu
             getOcctViewLogger()->info("Clearing selection");
             MVVM::SelectionManager::getInstance().clearSelection();
             myViewModel->getContext()->ClearSelected(Standard_True);
         }
     }
-    else {
+    else if (action == GLFW_RELEASE) {
         ReleaseMouseButton(aPos, mouseButtonFromGlfw(button), keyFlagsFromGlfw(mods), false);
+
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            bool shouldHandleSelection =
+                !wantCapture && (mods & GLFW_MOD_CONTROL) == 0 && !myLeftButtonDragDetected;
+
+            if (shouldHandleSelection) {
+                handleSelection(aPos.x(), aPos.y());
+            }
+
+            myLeftButtonPressed = false;
+            myLeftButtonDragDetected = false;
+        }
     }
 }
 
