@@ -198,27 +198,42 @@ void GeometryViewModel::updatePresentation(const std::string& id)
     // Get geometry data
     const GeometryModel::GeometryData* data = myModel->getGeometryData(id);
     if (!data) {
+        myVisibilityStates.erase(id);
+        MVVM::SelectionManager::getInstance().removeFromSelection(id);
         return;
     }
 
     // Create new representation
     Handle(AIS_InteractiveObject) aisObj = createPresentationForGeometry(id, data);
     if (aisObj.IsNull()) {
+        myVisibilityStates.erase(id);
+        MVVM::SelectionManager::getInstance().removeFromSelection(id);
         return;
     }
 
-    // Display object
+    // Update mapping
+    myIdToObjectMap[id] = aisObj;
+    myObjectToIdMap[aisObj] = id;
+
+    bool visible = true;
+    auto visibilityIt = myVisibilityStates.find(id);
+    if (visibilityIt != myVisibilityStates.end()) {
+        visible = visibilityIt->second;
+    }
+    myVisibilityStates[id] = visible;
+
+    // Display object (even if hidden, register with context then erase)
     myContext->Display(aisObj, false);
+    if (!visible) {
+        myContext->Erase(aisObj, false);
+        MVVM::SelectionManager::getInstance().removeFromSelection(id);
+    }
 
     // Activate face selection for AIS_Shape objects to support feature picking.
     Handle(AIS_Shape) displayedShape = Handle(AIS_Shape)::DownCast(aisObj);
     if (!displayedShape.IsNull()) {
         myContext->Activate(displayedShape, AIS_Shape::SelectionMode(TopAbs_FACE), Standard_False);
     }
-
-    // Update mapping
-    myIdToObjectMap[id] = aisObj;
-    myObjectToIdMap[aisObj] = id;
 }
 
 Handle(AIS_InteractiveObject)
@@ -282,4 +297,91 @@ Handle(AIS_InteractiveObject)
 void GeometryViewModel::onModelChanged(const std::string& id)
 {
     updatePresentation(id);
+}
+
+bool GeometryViewModel::isObjectVisible(const std::string& id) const
+{
+    auto it = myVisibilityStates.find(id);
+    if (it != myVisibilityStates.end()) {
+        return it->second;
+    }
+    return true;
+}
+
+void GeometryViewModel::setObjectVisibility(const std::string& id, bool visible)
+{
+    myVisibilityStates[id] = visible;
+
+    auto it = myIdToObjectMap.find(id);
+    if (it == myIdToObjectMap.end()) {
+        if (!visible) {
+            MVVM::SelectionManager::getInstance().removeFromSelection(id);
+        }
+        return;
+    }
+
+    Handle(AIS_InteractiveObject) aisObj = it->second;
+    if (aisObj.IsNull()) {
+        return;
+    }
+
+    if (visible) {
+        myContext->Display(aisObj, false);
+        Handle(AIS_Shape) aisShape = Handle(AIS_Shape)::DownCast(aisObj);
+        if (!aisShape.IsNull()) {
+            myContext->Activate(aisShape, AIS_Shape::SelectionMode(TopAbs_FACE), Standard_False);
+        }
+    }
+    else {
+        myContext->Erase(aisObj, false);
+        myContext->Deactivate(aisObj);
+        MVVM::SelectionManager::getInstance().removeFromSelection(id);
+    }
+
+    myContext->UpdateCurrentViewer();
+}
+
+bool GeometryViewModel::toggleObjectVisibility(const std::string& id)
+{
+    bool newState = !isObjectVisible(id);
+    setObjectVisibility(id, newState);
+    return newState;
+}
+
+void GeometryViewModel::selectObject(const std::string& id, bool append)
+{
+    auto it = myIdToObjectMap.find(id);
+    if (it == myIdToObjectMap.end()) {
+        return;
+    }
+
+    Handle(AIS_InteractiveObject) aisObj = it->second;
+    if (aisObj.IsNull()) {
+        return;
+    }
+
+    if (!isObjectVisible(id)) {
+        setObjectVisibility(id, true);
+    }
+
+    auto& selectionManager = MVVM::SelectionManager::getInstance();
+    if (!append) {
+        myContext->ClearSelected(false);
+    }
+    selectionManager.setSelectionType(
+        append ? MVVM::SelectionInfo::SelectionType::Add : MVVM::SelectionInfo::SelectionType::New);
+    selectionManager.addToSelection(aisObj, id);
+    selectionManager.setSelectionType(MVVM::SelectionInfo::SelectionType::New);
+
+    myContext->AddSelect(aisObj);
+    myContext->UpdateCurrentViewer();
+}
+
+Handle(AIS_InteractiveObject) GeometryViewModel::getPresentation(const std::string& id) const
+{
+    auto it = myIdToObjectMap.find(id);
+    if (it != myIdToObjectMap.end()) {
+        return it->second;
+    }
+    return Handle(AIS_InteractiveObject)();
 }

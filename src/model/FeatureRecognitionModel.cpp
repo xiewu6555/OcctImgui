@@ -17,10 +17,14 @@
 #include <TopExp_Explorer.hxx>
 #include <TopAbs.hxx>
 #include <TopoDS.hxx>
+#include <BinTools.hxx>
 
 #ifdef OCCTIMGUI_ENABLE_IFR
-#include <asiAlgo_ShapeSerializer.h>
 #include <featureRecognizer/CNC_FeatureRecognizer.h>
+#endif
+
+#ifdef OCCTIMGUI_ENABLE_IFR_SOURCE
+#include <asiAlgo_ShapeSerializer.h>
 #endif
 
 using json = nlohmann::json;
@@ -152,13 +156,19 @@ void FeatureRecognitionModel::removeEntity(const std::string& id)
 //=============================================================================
 // Feature Recognition
 //=============================================================================
-#ifdef OCCTIMGUI_ENABLE_IFR
+
 bool FeatureRecognitionModel::recognizeShape(const TopoDS_Shape& shape,
                                               const std::string& jsonParams)
 {
     auto logger = Utils::Logger::getLogger("Model");
     logger->info("Starting feature recognition");
 
+#ifndef OCCTIMGUI_ENABLE_IFR
+    myLastError = "IFR backend disabled at build time.";
+    logger->error("Cannot perform feature recognition because OCCTIMGUI_ENABLE_IFR is OFF. "
+                  "Enable IFR support in the build configuration to use CNC_FeatureRecognizer.");
+    return false;
+#else
     try
     {
         myOriginalShape = shape;
@@ -173,13 +183,24 @@ bool FeatureRecognitionModel::recognizeShape(const TopoDS_Shape& shape,
             return false;
         }
 
+
+
         CNC_FeatureRecognizer recognizer;
+#ifdef OCCTIMGUI_ENABLE_IFR_SOURCE
         if (!recognizer.loadModelFromString(shapeStr, false))
         {
             myLastError = "Failed to load model: " + recognizer.getLastError();
             logger->error(myLastError);
             return false;
         }
+#else
+        if (!recognizer.loadModelFromString(shapeStr, true))
+        {
+            myLastError = "Failed to load model: " + recognizer.getLastError();
+            logger->error(myLastError);
+            return false;
+        }
+#endif
 
         // Set parameters if provided
         if (!jsonParams.empty())
@@ -227,8 +248,8 @@ bool FeatureRecognitionModel::recognizeShape(const TopoDS_Shape& shape,
         logger->error(myLastError);
         return false;
     }
+#endif  // OCCTIMGUI_ENABLE_IFR
 }
-#endif // OCCTIMGUI_ENABLE_IFR
 
 bool FeatureRecognitionModel::loadResultFromJson(const std::string& jsonString)
 {
@@ -437,7 +458,7 @@ std::string FeatureRecognitionModel::serializeShape(const TopoDS_Shape& shape)
 
     try
     {
-#ifdef OCCTIMGUI_ENABLE_IFR
+#ifdef OCCTIMGUI_ENABLE_IFR_SOURCE
         std::string serializedShape;
         if (!asiAlgo_ShapeSerializer::Serialize(shape, serializedShape, false))
         {
@@ -446,9 +467,10 @@ std::string FeatureRecognitionModel::serializeShape(const TopoDS_Shape& shape)
         }
         return serializedShape;
 #else
-        std::ostringstream oss;
-        BRepTools::Write(shape, oss);
-        return oss.str();
+        std::stringbuf buffer(std::ios::out | std::ios::binary);
+        std::ostream stream(&buffer);
+        BinTools::Write(shape, stream);
+        return buffer.str();
 #endif
     }
     catch (const std::exception& e)

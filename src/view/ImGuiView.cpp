@@ -9,9 +9,16 @@
 #include "imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
 #include <nfd.h>
+#include <unordered_set>
 
 // 使用宏声明 ImGuiView 类的 logger
 DECLARE_LOGGER(ImGuiView)
+
+namespace
+{
+constexpr const char* ICON_EYE = "V";
+constexpr const char* ICON_EYE_SLASH = "X";
+}
 
 ImGuiView::ImGuiView(std::shared_ptr<IViewModel> viewModel)
     : myViewModel(viewModel)
@@ -363,54 +370,117 @@ void ImGuiView::renderObjectTree()
 
 void ImGuiView::renderGeometryTree()
 {
-    auto GeometryViewModel = getGeometryViewModel();
-    if (!GeometryViewModel)
+    auto geometryViewModel = getGeometryViewModel();
+    if (!geometryViewModel)
         return;
 
-    auto model = GeometryViewModel->getGeometryModel();
+    auto model = geometryViewModel->getGeometryModel();
     if (!model) {
         ImGui::Text("No model available");
         return;
     }
 
-    const auto& entityIds = model->getAllEntityIds();
+    const auto entityIds = model->getAllEntityIds();
 
     ImGui::Text("Objects: %zu", entityIds.size());
     ImGui::Separator();
 
-    // TODO
-#if 0
-    for (const auto& id : entityIds) {
-        try {
-            GeometryModel::GeometryType type = model->getGeometryType(id);
-            std::string typeStr;
+    if (entityIds.empty()) {
+        ImGui::TextDisabled("No objects loaded");
+        return;
+    }
 
-            switch (type) {
-                case GeometryModel::GeometryType::SHAPE:
-                    typeStr = "CAD";
-                    break;
-                case GeometryModel::GeometryType::MESH:
-                    typeStr = "Mesh";
-                    break;
-                default:
-                    typeStr = "Unknown";
-            }
-
-            std::string label = id + " [" + typeStr + "]";
-            bool isSelected = std::find(GeometryViewModel->getSelectedObjects().begin(),
-                                        GeometryViewModel->getSelectedObjects().end(),
-                                        id)
-                != GeometryViewModel->getSelectedObjects().end();
-
-            if (ImGui::Selectable(label.c_str(), isSelected)) {
-                // TODO: 处理选择
-            }
-        }
-        catch (const std::exception& e) {
-            ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error: %s", e.what());
+    // Cache currently selected object IDs for highlighting
+    std::unordered_set<std::string> selectedIds;
+    const auto& selectionInfo = MVVM::SelectionManager::getInstance().getCurrentSelection();
+    selectedIds.reserve(selectionInfo.selectedObjects.size());
+    for (const auto& entry : selectionInfo.selectedObjects) {
+        std::string id = !entry.id.empty() ? entry.id : geometryViewModel->getObjectId(entry.object);
+        if (!id.empty()) {
+            selectedIds.insert(id);
         }
     }
-#endif
+
+    auto renderCategory = [&](const char* label, const std::vector<std::string>& ids) {
+        if (ids.empty()) {
+            return;
+        }
+
+        ImGuiTreeNodeFlags catFlags =
+            ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth;
+        if (ImGui::TreeNodeEx(label, catFlags)) {
+            ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4.0f, 2.0f));
+            std::string tableId = std::string("##") + label;
+            if (ImGui::BeginTable(tableId.c_str(),
+                                  2,
+                                  ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg
+                                      | ImGuiTableFlags_NoBordersInBodyUntilResize)) {
+                ImGui::TableSetupColumn("Object", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Visibility", ImGuiTableColumnFlags_WidthFixed, 28.0f);
+
+                for (const auto& id : ids) {
+                    ImGui::PushID(id.c_str());
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+
+                    bool isVisible = geometryViewModel->isObjectVisible(id);
+                    bool isSelected = selectedIds.find(id) != selectedIds.end();
+
+                    if (isSelected) {
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                                               ImGui::GetColorU32(ImGuiCol_Header));
+                    }
+
+                    ImGui::AlignTextToFramePadding();
+                    ImVec4 textColor = isVisible ? ImGui::GetStyleColorVec4(ImGuiCol_Text)
+                                                 : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+                    ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+
+                    std::string labelText = "o " + id;
+                    if (ImGui::Selectable(labelText.c_str(), isSelected)) {
+                        bool append = ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeyShift;
+                        geometryViewModel->selectObject(id, append);
+                    }
+                    ImGui::PopStyleColor();
+
+                    if (ImGui::BeginPopupContextItem("ObjectContext")) {
+                        std::string visibilityLabel = isVisible ? "隐藏" : "显示";
+                        if (ImGui::MenuItem(visibilityLabel.c_str())) {
+                            bool newState = geometryViewModel->toggleObjectVisibility(id);
+                            isVisible = newState;
+                            if (!newState) {
+                                selectedIds.erase(id);
+                            }
+                        }
+                        ImGui::EndPopup();
+                    }
+
+                    ImGui::TableNextColumn();
+                    const char* icon = isVisible ? ICON_EYE : ICON_EYE_SLASH;
+                    if (ImGui::SmallButton(icon)) {
+                        bool newState = geometryViewModel->toggleObjectVisibility(id);
+                        isVisible = newState;
+                        if (!newState) {
+                            selectedIds.erase(id);
+                        }
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", isVisible ? "点击隐藏" : "点击显示");
+                    }
+
+                    ImGui::PopID();
+                }
+
+                ImGui::EndTable();
+            }
+            ImGui::PopStyleVar();
+            ImGui::TreePop();
+        }
+    };
+
+    renderCategory("CAD Shapes",
+                   model->getGeometryIdsByType(GeometryModel::GeometryType::SHAPE));
+    renderCategory("Meshes", model->getGeometryIdsByType(GeometryModel::GeometryType::MESH));
 }
 
 void ImGuiView::renderStatusBar()

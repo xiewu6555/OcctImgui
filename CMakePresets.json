@@ -36,7 +36,7 @@
             "binaryDir": "${sourceDir}/build/RelWithDebInfo",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-                "OCCTIMGUI_IFR_USE_SOURCE": "ON"
+                "OCCTIMGUI_IFR_USE_SOURCE": "OFF"
             }
         },
         {

@@ -23,6 +23,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 
 /**
  * @class GeometryViewModel
@@ -146,6 +147,35 @@ public:
     }
 
     /**
+     * @brief Checks whether a geometry is currently visible in the scene.
+     */
+    bool isObjectVisible(const std::string& id) const;
+
+    /**
+     * @brief Sets the visibility of a geometry.
+     * @param id Geometry identifier
+     * @param visible true to show, false to hide
+     */
+    void setObjectVisibility(const std::string& id, bool visible);
+
+    /**
+     * @brief Toggle the visibility of a geometry and return the new state.
+     */
+    bool toggleObjectVisibility(const std::string& id);
+
+    /**
+     * @brief Selects the geometry in the OCCT context and SelectionManager.
+     * @param id Geometry identifier
+     * @param append If true, keep previous selection (multi-select)
+     */
+    void selectObject(const std::string& id, bool append = false);
+
+    /**
+     * @brief Gets the AIS presentation handle for a geometry (if available).
+     */
+    Handle(AIS_InteractiveObject) getPresentation(const std::string& id) const;
+
+    /**
      * @brief 根据交互对象获取对应的模型 ID
      */
     std::string getObjectId(const Handle(AIS_InteractiveObject)& object) const;
@@ -179,6 +209,9 @@ private:
 
     /** Map from model IDs to OCCT objects */
     std::map<std::string, Handle(AIS_InteractiveObject)> myIdToObjectMap;
+
+    /** Cached visibility state per object */
+    std::unordered_map<std::string, bool> myVisibilityStates;
 
     /**
      * @brief Creates an appropriate AIS object for a geometry
