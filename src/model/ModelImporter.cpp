@@ -10,6 +10,7 @@
 #include <TopLoc_Location.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 
 
 // libigl includes for mesh import
@@ -106,6 +107,33 @@ bool ModelImporter::importStepFile(const std::string& filePath,
     // 转换所有根实体
     reader.TransferRoots();
     TopoDS_Shape shape = reader.OneShape();
+
+#ifdef OCCTIMGUI_ENABLE_UNION
+    //Union Faces
+    {
+        Standard_Real aTol = Precision::Confusion();
+        TopExp_Explorer expF (shape, TopAbs_FACE);
+        for (; expF.More(); expF.Next())
+        {
+            TopoDS_Face aF = TopoDS::Face(expF.Current());
+            aTol = Max(BRep_Tool::Tolerance(aF), aTol);
+        }
+
+        // Use OCCT algo ShapeUpgrade_UnifySameDomain instead of BlockFix_UnionFaces:
+        Standard_Boolean isUnifyEdges = Standard_False;
+        Standard_Boolean isUnifyFaces = Standard_True;
+        Standard_Boolean isConcatBSplines = Standard_True;
+        ShapeUpgrade_UnifySameDomain aUnifier (shape,
+                                               isUnifyEdges, isUnifyFaces, isConcatBSplines);
+        aUnifier.SetLinearTolerance(aTol);
+        aUnifier.SetAngularTolerance(aTol);
+        aUnifier.Build();
+
+        TopoDS_Shape theOutShape = aUnifier.Shape();
+
+        if (!theOutShape.IsNull()) {shape=theOutShape;}
+    }
+#endif
 
     if (shape.IsNull()) {
         getModelImporterLogger()->error("No valid shape in STEP file: {}", filePath);

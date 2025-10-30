@@ -23,7 +23,7 @@
 #include <featureRecognizer/CNC_FeatureRecognizer.h>
 #endif
 
-#ifdef OCCTIMGUI_ENABLE_IFR_SOURCE
+#ifdef  OCCTIMGUI_ENABLE_IFR_SOURCE
 #include <asiAlgo_ShapeSerializer.h>
 #endif
 
@@ -186,7 +186,7 @@ bool FeatureRecognitionModel::recognizeShape(const TopoDS_Shape& shape,
 
 
         CNC_FeatureRecognizer recognizer;
-#ifdef OCCTIMGUI_ENABLE_IFR_SOURCE
+#ifdef  OCCTIMGUI_ENABLE_IFR_SOURCE
         if (!recognizer.loadModelFromString(shapeStr, false))
         {
             myLastError = "Failed to load model: " + recognizer.getLastError();
@@ -458,7 +458,7 @@ std::string FeatureRecognitionModel::serializeShape(const TopoDS_Shape& shape)
 
     try
     {
-#ifdef OCCTIMGUI_ENABLE_IFR_SOURCE
+#ifdef  OCCTIMGUI_ENABLE_IFR_SOURCE
         std::string serializedShape;
         if (!asiAlgo_ShapeSerializer::Serialize(shape, serializedShape, false))
         {
