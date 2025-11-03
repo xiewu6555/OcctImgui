@@ -9,7 +9,9 @@
 #include "imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
 #include <nfd.h>
+#include <filesystem>
 #include <unordered_set>
+#include <vector>
 
 // 使用宏声明 ImGuiView 类的 logger
 DECLARE_LOGGER(ImGuiView)
@@ -62,6 +64,56 @@ void ImGuiView::initialize(GLFWwindow* window)
         ImGuiIO& io = ImGui::GetIO();
         // 移除Docking特性
         // io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+        // 配置字体以支持中文字符显示
+        io.Fonts->AddFontDefault();
+
+        ImFontConfig fontCfg;
+        fontCfg.MergeMode = true;
+        fontCfg.PixelSnapH = true;
+        const ImWchar* chineseRanges = io.Fonts->GetGlyphRangesChineseFull();
+
+        auto pathToUtf8 = [](const std::filesystem::path& p) -> std::string {
+            const auto u8 = p.u8string();
+#if defined(__cpp_char8_t)
+            return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+#else
+            return u8;
+#endif
+        };
+
+        std::vector<std::filesystem::path> fontCandidates = {
+#if defined(_WIN32)
+            std::filesystem::path("C:/Windows/Fonts/msyh.ttc"),
+            std::filesystem::path("C:/Windows/Fonts/msyh.ttf"),
+            std::filesystem::path("C:/Windows/Fonts/simhei.ttf"),
+            std::filesystem::path("C:/Windows/Fonts/simsun.ttc")
+#else
+            std::filesystem::path("/System/Library/Fonts/STHeiti Medium.ttc"),
+            std::filesystem::path("/System/Library/Fonts/PingFang.ttc"),
+            std::filesystem::path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+            std::filesystem::path("/usr/share/fonts/truetype/arphic/ukai.ttc")
+#endif
+        };
+
+        bool chineseFontLoaded = false;
+        for (const auto& fontPath : fontCandidates) {
+            if (!std::filesystem::exists(fontPath)) {
+                continue;
+            }
+
+            std::string utf8Path = pathToUtf8(fontPath);
+            if (io.Fonts->AddFontFromFileTTF(utf8Path.c_str(), 16.0f, &fontCfg, chineseRanges)) {
+                chineseFontLoaded = true;
+                getImGuiViewLogger()->info("Loaded ImGui font for CJK glyphs: {}", utf8Path);
+                break;
+            }
+        }
+
+        if (!chineseFontLoaded) {
+            getImGuiViewLogger()->warn(
+                "Failed to load CJK font; Chinese characters may not render correctly.");
+        }
 
         // 设置ImGui风格
         ImGui::StyleColorsDark();

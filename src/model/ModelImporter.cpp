@@ -23,10 +23,24 @@
 #include <cctype>
 #include <filesystem>
 #include <functional>
-
+#include <string>
 
 // 使用宏声明 ModelImporter 类的 logger
 DECLARE_LOGGER(ModelImporter)
+
+namespace
+{
+// Convert filesystem fragments to UTF-8 regardless of platform encoding
+std::string toUtf8(const std::filesystem::path& fragment)
+{
+    const auto u8 = fragment.u8string();
+#if defined(__cpp_char8_t)
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+#else
+    return u8;
+#endif
+}
+}  // namespace
 
 ModelImporter::ModelImporter()
 {
@@ -209,8 +223,8 @@ bool ModelImporter::importObjFile(const std::string& filePath,
 
 std::string ModelImporter::getFileExtension(const std::string& filePath) const
 {
-    std::filesystem::path path(filePath);
-    std::string extension = path.extension().string();
+    std::filesystem::path path = std::filesystem::u8path(filePath);
+    std::string extension = toUtf8(path.extension());
 
     // 转为小写
     std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) {
@@ -222,6 +236,6 @@ std::string ModelImporter::getFileExtension(const std::string& filePath) const
 
 std::string ModelImporter::getFileName(const std::string& filePath) const
 {
-    std::filesystem::path path(filePath);
-    return path.stem().string();
+    std::filesystem::path path = std::filesystem::u8path(filePath);
+    return toUtf8(path.stem());
 }

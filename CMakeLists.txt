@@ -100,7 +100,7 @@ if(OCCTIMGUI_IFR_USE_SOURCE)
         set(IFR_LINK_TARGET ifr_featureRecognizer)
         set(OCCTIMGUI_ENABLE_IFR ON)
         set(OCCTIMGUI_ENABLE_IFR_SOURCE ON)
-        set(OCCTIMGUI_ENABLE_UNION ON)
+        set(OCCTIMGUI_ENABLE_UNION OFF)
 
     else()
         message(FATAL_ERROR "OCCTIMGUI_IFR_USE_SOURCE is ON, but IFR sources were not found at ${IFR_ROOT_DIR}")
