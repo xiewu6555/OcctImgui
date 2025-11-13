@@ -176,6 +176,7 @@ bool FeatureRecognitionModel::recognizeShape(const TopoDS_Shape& shape,
 
         // Serialize shape to string
         std::string shapeStr = serializeShape(shape);
+        std::cout << "shapeStr:"<<shapeStr << std::endl;
         if (shapeStr.empty())
         {
             myLastError = "Failed to serialize shape";
